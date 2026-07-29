@@ -49,9 +49,14 @@ pub struct Config {
     pub value: Color,
     /// Blank columns between the art and the info pane.
     pub gap: usize,
-    /// Largest number of rows the fetch may occupy. The art is scaled to fit,
-    /// keeping its aspect ratio. 0 lets it use whatever space is available,
-    /// which on a tall terminal means a very large cat.
+    /// Largest box, in cells, the art may occupy. It is scaled to fit inside
+    /// both, keeping its aspect ratio, so art of differing proportions still
+    /// comes out a consistent size. 0 means "use whatever is available", which
+    /// on a large terminal means a very large cat.
+    ///
+    /// Both caps are needed: a wide, short animation slips under a height cap
+    /// untouched and would otherwise render at full width.
+    pub width: usize,
     pub height: usize,
     /// Seconds the startup form (`--play`) animates before handing back.
     pub play_seconds: f32,
@@ -64,7 +69,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            animation: crate::anim::BUNDLED_NAME.into(),
+            animation: crate::anim::DEFAULT_NAME.into(),
             fps: 12.0,
             ramp: " ░▒▓█".into(),
             gradient: Gradient::new(vec![
@@ -78,8 +83,9 @@ impl Default for Config {
             accent: Color(Rgb(0x74, 0xa4, 0xff)),
             value: Color(Rgb(0xc8, 0xcc, 0xd4)),
             gap: 4,
-            // Roughly the height of a distro logo in a conventional fetch, and
-            // a good match for the number of info rows beside it.
+            // Roughly the size of a distro logo in a conventional fetch, and a
+            // good match for the number of info rows beside it.
+            width: 56,
             height: 20,
             play_seconds: 3.0,
             color: true,
@@ -108,6 +114,11 @@ impl Config {
     pub fn frame_interval(&self) -> std::time::Duration {
         let fps = self.fps.clamp(1.0, 120.0);
         std::time::Duration::from_secs_f32(1.0 / fps)
+    }
+
+    /// Columns the art may occupy, given how many are actually available.
+    pub fn width(&self, available: usize) -> usize {
+        if self.width == 0 { available } else { self.width.min(available) }
     }
 
     /// Rows the fetch may occupy, given how many are actually available.
@@ -168,6 +179,14 @@ mod tests {
         assert_eq!(cfg.fps, 30.0);
         assert_eq!(cfg.animation, "cat-run");
         assert!(!cfg.modules.is_empty());
+    }
+
+    #[test]
+    fn width_cap_is_bounded_by_what_is_available() {
+        let cfg: Config = toml::from_str("width = 56").unwrap();
+        assert_eq!(cfg.width(120), 56);
+        assert_eq!(cfg.width(30), 30);
+        assert_eq!(toml::from_str::<Config>("width = 0").unwrap().width(120), 120);
     }
 
     #[test]

@@ -11,18 +11,35 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-/// Name of the animation compiled into the binary. Every other name has to
-/// resolve to a directory on disk.
-pub const BUNDLED_NAME: &str = "cat-run";
+/// The animation used when nothing else is configured.
+pub const DEFAULT_NAME: &str = "cat-run";
 
-/// The bundled animation, used when the user has not supplied their own.
-/// Frames are ordered by filename.
-const BUNDLED: &[&str] = &[
-    include_str!("../assets/anim/cat-run/01.txt"),
-    include_str!("../assets/anim/cat-run/02.txt"),
-    include_str!("../assets/anim/cat-run/03.txt"),
-    include_str!("../assets/anim/cat-run/04.txt"),
-    include_str!("../assets/anim/cat-run/05.txt"),
+/// Animations compiled into the binary, so a fresh install has art without
+/// needing any files on disk. Frames are ordered as listed.
+const BUNDLED: &[(&str, &[&str])] = &[
+    (
+        "cat-run",
+        &[
+            include_str!("../assets/anim/cat-run/01.txt"),
+            include_str!("../assets/anim/cat-run/02.txt"),
+            include_str!("../assets/anim/cat-run/03.txt"),
+            include_str!("../assets/anim/cat-run/04.txt"),
+            include_str!("../assets/anim/cat-run/05.txt"),
+        ],
+    ),
+    (
+        "cat-tail",
+        &[
+            include_str!("../assets/anim/cat-tail/01.txt"),
+            include_str!("../assets/anim/cat-tail/02.txt"),
+            include_str!("../assets/anim/cat-tail/03.txt"),
+            include_str!("../assets/anim/cat-tail/04.txt"),
+            include_str!("../assets/anim/cat-tail/05.txt"),
+            include_str!("../assets/anim/cat-tail/06.txt"),
+            include_str!("../assets/anim/cat-tail/07.txt"),
+            include_str!("../assets/anim/cat-tail/08.txt"),
+        ],
+    ),
 ];
 
 /// One frame as a binary coverage mask on a `width * height` grid.
@@ -126,13 +143,12 @@ impl Animation {
         Some(Self { frames, width, height })
     }
 
-    /// Load `name` from the user's animation directory.
+    /// Load `name`, preferring a directory on disk over the bundled copy.
     ///
-    /// A directory always wins, so a user folder named `cat-run` shadows the
-    /// bundled art and the default can be replaced without touching the binary.
-    /// Only the bundled name resolves without one: falling back to the cat for
-    /// any other name would silently swallow a typo, which is easy to miss once
-    /// several animations are installed.
+    /// A user folder shadows a bundled animation of the same name, so the
+    /// built-in art can be replaced without touching the binary. An unknown
+    /// name is an error rather than a fallback: silently substituting different
+    /// art would hide a typo, which is easy to miss once several are installed.
     pub fn load(dir: Option<&Path>, name: &str) -> io::Result<Self> {
         if let Some(dir) = dir {
             let path = dir.join(name);
@@ -143,19 +159,19 @@ impl Animation {
             }
         }
 
-        if name != BUNDLED_NAME {
-            let where_ = dir.map_or_else(
-                || "no animation directory is configured".to_string(),
-                |d| format!("looked in {}", d.join(name).display()),
-            );
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("no animation named {name:?} ({where_})"),
-            ));
+        if let Some((_, frames)) = BUNDLED.iter().find(|(n, _)| *n == name) {
+            return Self::from_texts(frames.iter().map(|s| s.to_string()))
+                .ok_or_else(|| io::Error::other("bundled animation is empty"));
         }
 
-        Self::from_texts(BUNDLED.iter().map(|s| s.to_string()))
-            .ok_or_else(|| io::Error::other("bundled animation is empty"))
+        let where_ = dir.map_or_else(
+            || "no animation directory is configured".to_string(),
+            |d| format!("looked in {}", d.join(name).display()),
+        );
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("no animation named {name:?} ({where_}); try --list"),
+        ))
     }
 
     /// Largest `(width, height)` that fits inside the given box while keeping
@@ -173,6 +189,52 @@ impl Animation {
         let h = ((self.height as f32 * scale).round() as usize).clamp(1, max_h.max(1));
         (w, h)
     }
+}
+
+/// One installed animation, as reported by `--list`.
+pub struct Entry {
+    pub name: String,
+    pub frames: usize,
+    /// Where it came from, or `None` when it is compiled into the binary.
+    pub path: Option<std::path::PathBuf>,
+}
+
+/// Every animation available, sorted by name.
+///
+/// A directory shadows a bundled animation of the same name, matching what
+/// `load` does — the listing must agree with what you would actually get.
+pub fn list(dir: Option<&Path>) -> Vec<Entry> {
+    let mut entries: Vec<Entry> = BUNDLED
+        .iter()
+        .map(|(name, frames)| Entry {
+            name: (*name).to_string(),
+            frames: frames.len(),
+            path: None,
+        })
+        .collect();
+
+    if let Some(dir) = dir
+        && let Ok(read) = fs::read_dir(dir)
+    {
+        for path in read.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.is_dir()) {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let frames = read_frame_dir(&path).map_or(0, |f| f.len());
+            if frames == 0 {
+                continue;
+            }
+
+            let entry = Entry { name: name.to_string(), frames, path: Some(path.clone()) };
+            match entries.iter_mut().find(|e| e.name == name) {
+                Some(existing) => *existing = entry,
+                None => entries.push(entry),
+            }
+        }
+    }
+
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries
 }
 
 /// Read every `.txt` in `dir` in filename order. Sorting is what defines frame
@@ -256,10 +318,25 @@ mod tests {
 
     #[test]
     fn embedded_frames_share_one_canvas() {
-        let anim = Animation::load(None, BUNDLED_NAME).expect("bundled art must load");
+        let anim = Animation::load(None, DEFAULT_NAME).expect("bundled art must load");
         assert_eq!(anim.frames.len(), 5);
         // Registration between poses depends on this.
         assert!(anim.frames.iter().all(|f| f.height == anim.height));
+    }
+
+    #[test]
+    fn every_bundled_animation_loads_and_is_listed() {
+        let listed = list(None);
+        assert_eq!(listed.len(), BUNDLED.len());
+
+        for (name, frames) in BUNDLED {
+            let anim = Animation::load(None, name).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(anim.frames.len(), frames.len(), "{name}");
+            // Poses have to be registered against a shared canvas, or the art
+            // jitters as it plays.
+            assert!(anim.frames.iter().all(|f| f.height == anim.height), "{name}");
+            assert!(listed.iter().any(|e| e.name == *name && e.path.is_none()));
+        }
     }
 
     #[test]

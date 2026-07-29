@@ -40,8 +40,9 @@ into the lower part of the screen indefinitely without us redrawing anything —
 we only repaint the top rows to advance the animation.
 
 **The art scales to fit.** Frames are stored as an ink-coverage mask rather
-than as characters, so they resample to any size — `height` caps how many rows
-the fetch may use, and the art fits itself to that.
+than as characters, so they resample to any size. `width` and `height` define a
+box, and the art is fitted inside it with its aspect ratio kept — so a tall
+animation and a wide one still come out looking the same size.
 
 **Raw mode with a non-blocking event poll** means the animation and the prompt
 are not competing for the loop. Each pass draws a frame, then waits for input
@@ -85,10 +86,32 @@ animfetch --once             # print one static frame and exit
 already is and then hands control back, so your own prompt follows underneath.
 
 ```
-animfetch -a parrot -f 24    # different animation, faster
-animfetch --height 12        # smaller art (0 fills the screen)
+animfetch -a cat-tail        # different animation, this run only
+animfetch --width 40         # smaller art (0 fills the screen)
+animfetch --height 12        # both caps apply; aspect ratio is kept
 animfetch --play -s 1.5      # shorter intro
 ```
+
+### Choosing an animation
+
+```sh
+animfetch --list             # what is available (* marks the current default)
+animfetch -a cat-tail        # use one for this run only
+animfetch --set cat-tail     # make it the default, saved to config.toml
+```
+
+```
+$ animfetch --list
+* cat-run    5 frames  built in
+  cat-tail   8 frames  built in
+  fox-run   12 frames  /home/you/.config/animfetch/anim/fox-run
+```
+
+`--set` rewrites only the `animation` line in your config, leaving comments and
+every other key alone, and refuses a name that would not load. A name that
+resolves to nothing is always an error rather than a silent fall back to the
+built-in art — with several animations installed, a typo is otherwise easy to
+miss.
 
 | Key | Action |
 | --- | --- |
@@ -131,12 +154,19 @@ afterwards rather than refusing to start.
 
 ### Custom animations
 
-Drop plain-text frames into `~/.config/animfetch/anim/<name>/`, one file per
-frame, named so they sort in order (`01.txt`, `02.txt`, …). Then:
+Two animations ship in the binary: `cat-run` and `cat-tail`.
+
+For your own, drop plain-text frames into `~/.config/animfetch/anim/<name>/`,
+one file per frame, named so they sort in order (`01.txt`, `02.txt`, …). Then:
 
 ```sh
+animfetch --list
 animfetch -a <name>
 ```
+
+A directory shadows a built-in animation of the same name, so `cat-run` can be
+replaced without touching the binary. To compile a new one in instead, put it
+under `assets/anim/` and add it to the `BUNDLED` table in `src/anim.rs`.
 
 Two things to know:
 
@@ -186,5 +216,5 @@ src/
   prompt.rs    input handling, builtins, and shell execution
   config.rs    config file and defaults
   color.rs     truecolor and gradients
-assets/anim/cat-run/*.txt   built-in animation, embedded at compile time
+assets/anim/*/            built-in animations, embedded at compile time
 ```

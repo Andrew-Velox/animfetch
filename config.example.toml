@@ -4,7 +4,8 @@
 # leave out keeps its default, and an unreadable file falls back to defaults
 # with a warning rather than refusing to start.
 
-# Animation to play: a directory name under ~/.config/animfetch/anim/.
+# Animation to play. `animfetch --list` shows what is available, and
+# `animfetch --set <name>` rewrites this line for you.
 # "cat-run" is built into the binary; a directory of the same name overrides it.
 # Any other name must exist on disk, or animfetch reports it rather than
 # silently falling back.
@@ -13,9 +14,13 @@ animation = "cat-run"
 # Frames per second. Clamped to 1–120.
 fps = 12.0
 
-# Largest number of rows the fetch may occupy. The art scales to fit, keeping
-# its aspect ratio. Set 0 to let it fill the screen — on a tall terminal that
-# means a very large cat.
+# Largest box, in cells, the art may occupy. It scales to fit inside both while
+# keeping its aspect ratio, so animations of different proportions still come
+# out a consistent size. Set either to 0 to fill the available space.
+#
+# Both matter: a wide, short animation slips under a height cap untouched and
+# would otherwise render at its full width.
+width = 56
 height = 20
 
 # How long `animfetch --play` animates before handing back to your shell.

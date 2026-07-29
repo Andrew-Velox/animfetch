@@ -65,6 +65,25 @@ fn run() -> io::Result<ExitCode> {
     }
 
     let anim_dir = dir.as_ref().map(|d| d.join("anim"));
+
+    if args.list {
+        list_animations(anim_dir.as_deref(), &cfg.animation);
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if let Some(name) = &args.set {
+        // Refuse to persist a name that will not load; a config that breaks
+        // every future run is worse than a rejected command.
+        Animation::load(anim_dir.as_deref(), name)?;
+
+        let Some(dir) = dir.as_deref() else {
+            return Err(io::Error::other("no config directory: set HOME or XDG_CONFIG_HOME"));
+        };
+        let path = set_animation(dir, name)?;
+        println!("default animation set to {name:?} in {}", path.display());
+        return Ok(ExitCode::SUCCESS);
+    }
+
     let animation = Animation::load(anim_dir.as_deref(), &cfg.animation)?;
 
     let title = fetch::title();
@@ -87,6 +106,66 @@ fn run() -> io::Result<ExitCode> {
     }
 
     Ok(ExitCode::from(status))
+}
+
+/// Print every available animation, marking the one currently in effect.
+fn list_animations(dir: Option<&std::path::Path>, current: &str) {
+    let entries = anim::list(dir);
+    let width = entries.iter().map(|e| e.name.len()).max().unwrap_or(0);
+
+    for entry in &entries {
+        let mark = if entry.name == current { "*" } else { " " };
+        let source = match &entry.path {
+            Some(path) => path.display().to_string(),
+            None => "built in".to_string(),
+        };
+        println!(
+            "{mark} {:width$}  {:>2} frames  {source}",
+            entry.name, entry.frames
+        );
+    }
+
+    if entries.is_empty() {
+        println!("no animations found");
+    }
+}
+
+/// Write `animation = "<name>"` into the config, creating it if needed.
+///
+/// This edits the file as text rather than reserialising the parsed config,
+/// which would discard every comment and every key left at its default. Only
+/// the `animation` line is rewritten — including any trailing comment on it,
+/// which is the one thing this does lose.
+fn set_animation(dir: &std::path::Path, name: &str) -> io::Result<std::path::PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join("config.toml");
+
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e),
+    };
+
+    let setting = format!("animation = {name:?}");
+    let mut replaced = false;
+    let mut out = String::with_capacity(existing.len() + setting.len() + 1);
+
+    for line in existing.lines() {
+        if !replaced && line.trim_start().starts_with("animation") && line.contains('=') {
+            out.push_str(&setting);
+            replaced = true;
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    if !replaced {
+        out.push_str(&setting);
+        out.push('\n');
+    }
+
+    std::fs::write(&path, out)?;
+    Ok(path)
 }
 
 /// Erase from the cursor to the end of the line.
@@ -136,7 +215,7 @@ impl Layout {
         // the info pane can claim and let `compose` ellipsise the overflow.
         let info_w = widest.min(w * Self::INFO_WIDTH_SHARE / 100);
 
-        let max_w = w.saturating_sub(info_w + cfg.gap).max(8);
+        let max_w = cfg.width(w.saturating_sub(info_w + cfg.gap).max(8));
         let (art_w, art_h) = animation.fit(max_w, max_h.max(4));
         let ramp = cfg.ramp();
 
@@ -505,9 +584,12 @@ fn draw_once(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -
 struct Args {
     animation: Option<String>,
     fps: Option<f32>,
+    width: Option<usize>,
     height: Option<usize>,
     play: bool,
     seconds: Option<f32>,
+    list: bool,
+    set: Option<String>,
     once: bool,
     no_color: bool,
 }
@@ -530,6 +612,10 @@ impl Args {
                 }
                 "-1" | "--once" => args.once = true,
                 "-p" | "--play" => args.play = true,
+                "-l" | "--list" => args.list = true,
+                "--set" => {
+                    args.set = Some(argv.next().ok_or("--set needs an animation name")?);
+                }
                 "--no-color" => args.no_color = true,
                 "-a" | "--animation" => {
                     args.animation = Some(argv.next().ok_or("--animation needs a name")?);
@@ -537,6 +623,10 @@ impl Args {
                 "-f" | "--fps" => {
                     let raw = argv.next().ok_or("--fps needs a number")?;
                     args.fps = Some(raw.parse().map_err(|_| format!("not a number: {raw}"))?);
+                }
+                "-W" | "--width" => {
+                    let raw = argv.next().ok_or("--width needs a number of columns")?;
+                    args.width = Some(raw.parse().map_err(|_| format!("not a number: {raw}"))?);
                 }
                 "-H" | "--height" => {
                     let raw = argv.next().ok_or("--height needs a number of rows")?;
@@ -560,6 +650,9 @@ impl Args {
         if let Some(fps) = self.fps {
             cfg.fps = fps;
         }
+        if let Some(width) = self.width {
+            cfg.width = width;
+        }
         if let Some(height) = self.height {
             cfg.height = height;
         }
@@ -582,10 +675,15 @@ Modes:
   -p, --play              Animate in place for a few seconds, then exit
   -1, --once              Print one static frame and exit
 
+Animations:
+  -a, --animation <NAME>  Use NAME for this run only
+  -l, --list              List available animations (* = current)
+      --set <NAME>        Make NAME the default, saved to config.toml
+
 Options:
-  -a, --animation <NAME>  Animation to play (default: cat)
   -f, --fps <N>           Frames per second
-  -H, --height <ROWS>     Cap the fetch height (0 fills the screen)
+  -W, --width <COLS>      Cap the art width (0 fills the screen)
+  -H, --height <ROWS>     Cap the art height (0 fills the screen)
   -s, --seconds <N>       How long --play animates
       --no-color          Disable colour output
   -h, --help              Show this help
