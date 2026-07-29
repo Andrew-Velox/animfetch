@@ -1,0 +1,146 @@
+name: CI
+
+# Every pull request, and every push to main. Pushes to other branches are left
+# alone deliberately: they get checked when they open a PR, and checking them
+# twice only costs minutes and duplicate failure notifications.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Nothing here writes to the repository, so drop the token to read-only.
+permissions:
+  contents: read
+
+# A new push to a PR makes the run already in flight obsolete. Runs on main are
+# never cancelled, so every commit that lands stays independently verified.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: build, test and lint
+    # No OS matrix on purpose. animfetch reads /proc and /sys, calls fork(2),
+    # statvfs(3) and tcgetpgrp(3), and needs a controlling terminal — it is
+    # Linux-only by design (see the module docs in src/fetch.rs), so the other
+    # runners would fail to build rather than tell us anything useful.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo registry and build directory
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      # --locked on every command. Cargo.lock is committed on purpose (see the
+      # note in .gitignore), so a change that edits Cargo.toml without
+      # refreshing the lockfile should fail loudly here instead of quietly
+      # building against versions nobody tested.
+      - name: Build
+        run: cargo build --locked --all-targets
+
+      - name: Test
+        run: cargo test --locked
+
+      # Clippy reports the plain rustc lints too — unused imports, dead code,
+      # unreachable patterns — so this is the warnings gate for our own code.
+      #
+      # RUSTFLAGS is deliberately left unset instead: it would apply -D warnings
+      # to dependencies as well, and a future compiler emitting a deprecation
+      # warning inside crossterm or toml would then break our build for a
+      # reason that has nothing to do with the change under test.
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      # The source leans heavily on doc comments and intra-doc links; this is
+      # what catches a link that rots when an item is renamed or moved.
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --no-deps --document-private-items
+
+      # Deliberately NOT run here: `cargo fmt --check`.
+      #
+      # This tree is hand-formatted and does not match rustfmt's output, so the
+      # check would fail on code no PR has touched. If the project ever adopts
+      # rustfmt, reformat everything in one dedicated commit first, then add the
+      # gate — otherwise it reports noise instead of problems.
+
+      - name: Build release
+        run: cargo build --locked --release
+
+      # The unit tests cover pure logic in isolation. This runs the real binary,
+      # which is the only place argument parsing, config loading, animation
+      # loading and the non-interactive draw path are exercised together.
+      #
+      # The interactive, --play and --pin paths are not reachable here: they
+      # need a terminal, and a CI runner has none. Test those by hand.
+      - name: Smoke test the binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin=./target/release/animfetch
+          # Bounded, so a regression that blocks on input fails in seconds
+          # rather than sitting there until the job times out.
+          run() { timeout 30s "$bin" "$@"; }
+
+          run --version
+          run --help > /dev/null
+          run --list
+
+          # stdout is a pipe here, so this takes the non-interactive path.
+          output=$(run --once)
+          if [ -z "$output" ]; then
+            echo "::error::--once printed nothing"
+            exit 1
+          fi
+          printf '%s\n' "$output"
+
+          # Every animation shipped in assets/ must actually load. There is no
+          # animation directory in the runner's HOME, so these can only resolve
+          # through the bundled copies — which means this also catches art that
+          # was added to assets/ but never registered in the BUNDLED table in
+          # src/anim.rs.
+          for dir in assets/anim/*/; do
+            name=$(basename "$dir")
+            echo "--- $name ---"
+            for style in half quad ramp; do
+              run --once --animation "$name" --style "$style" > /dev/null
+            done
+          done
+
+          # A typo in an animation name must be an error. Silently falling back
+          # to the default art would hide the mistake.
+          if run --once --animation no-such-animation > /dev/null 2>&1; then
+            echo "::error::an unknown animation name should have failed"
+            exit 1
+          fi
+
+          # Likewise an unknown flag, rather than being ignored.
+          if run --no-such-flag > /dev/null 2>&1; then
+            echo "::error::an unknown flag should have failed"
+            exit 1
+          fi
+
+          echo "smoke tests passed"
