@@ -4,30 +4,10 @@ An animated system fetch you can work inside. The fetch stays pinned at the top
 of the screen and keeps animating while your prompt and command output scroll
 below it.
 
-```
-                                     ▒█▓░ ▒█░
-                                    ░█████████▓       mohabbat@mohabbat
-                                   ▒███████████▒      ─────────────────
-                                  ▓████████████▒      OS: Arch Linux x86_64
-                                 ░██████████████▓     Host: B650M K
-                                ▓████████████████▒    Kernel: 7.0.14-arch1-1
-                       ▓█████████████████████████▒    Uptime: 2 hours, 28 mins
-   ░▒▒▓██████████████████████████████████████████     Packages: 1100 (pacman)
-▒▓█████████████████████████████████████████████▓░     Shell: bash
-█████████████████████████████████████████████▓        WM: Hyprland
- ░▒▒         ░▒████████████████████████████████▒      Terminal: kitty
-          ░▒████████████████████████████████████▓     CPU: AMD Ryzen 7 7700 (16)
-         ▓██████████████████████▓▒▒  ▒▓████████▓▒     Memory: 9.07GiB / 15GiB (61%)
-       ▒████████████████▓▒▒▒▒▒▒        ░▒▒▒▒▒▒▒       Swap: 66MiB / 4.00GiB (1%)
-       ▒██████████████▓▒                              Disk: 180GiB / 456GiB (39%)
-        ▒▒▒▒▒▓██████▓                                 ████████████████████████
-             ▒█████░
-              ░▒▒
-
-mohabbat@archlinux ~/Projects/rust/animfetch $ ls
-assets  Cargo.toml  config.example.toml  README.md  src
-mohabbat@archlinux ~/Projects/rust/animfetch $ █    <- scrolls freely below
-```
+<video
+  src="https://github.com/Andrew-Velox/animfetch/raw/main/.github/assets/animfetch-video.mp4"
+  controls muted loop playsinline width="900">
+</video>
 
 Linux only — all system data comes from `/proc`, `/sys`, and environment
 variables.
