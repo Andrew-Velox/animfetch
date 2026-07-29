@@ -34,10 +34,25 @@ variables.
 
 ## Install
 
+Linux, and Rust 1.88 or newer to build.
+
 ```sh
+cargo install --locked --git https://github.com/Andrew-Velox/animfetch
+```
+
+Installs to `~/.cargo/bin` — make sure that is on your `PATH`.
+
+Or from a clone:
+
+```sh
+git clone https://github.com/Andrew-Velox/animfetch
+cd animfetch
 cargo build --release
 install -Dm755 target/release/animfetch ~/.local/bin/animfetch
 ```
+
+Update with `cargo install --locked --force --git ...`, remove with
+`cargo uninstall animfetch`.
 
 ## Usage
 
@@ -52,6 +67,7 @@ animfetch            # interactive: animfetch owns the prompt
 never scrolls the top rows, then detaches into the background and paints them
 while your own shell — your prompt, history, completions, aliases — runs
 underneath. Undo it with `animfetch --unpin`.
+
 
 Common options:
 
@@ -72,6 +88,21 @@ for colour.
 
 Use `--pin`, `--play`, or `--once`. Never the bare `animfetch` — it waits for
 input and replaces your shell for as long as it runs.
+
+Add one line to `~/.bashrc` or `~/.zshrc`:
+
+```sh
+[[ $- == *i* ]] && command -v animfetch >/dev/null && animfetch --pin
+```
+
+or to `~/.config/fish/config.fish`:
+
+```fish
+status is-interactive; and type -q animfetch; and animfetch --pin
+```
+
+The guards keep it out of scripts and `scp`, which read your startup file too
+and break on unexpected output, and out of shells that cannot find the binary.
 
 `--pin` is safe to run for every shell: a second one in a nested shell notices
 the first and exits silently.
@@ -135,9 +166,12 @@ Frames are embedded at compile time, so a new animation will not appear in
 
 ## Configuration
 
-Copy `config.example.toml` to `~/.config/animfetch/config.toml`. Every key is
-optional, and a malformed file falls back to defaults rather than refusing to
-start.
+Optional. Every key is optional too, and a malformed file falls back to defaults
+rather than refusing to start.
+
+Copy [`config.example.toml`][example] to `~/.config/animfetch/config.toml`.
+
+[example]: https://github.com/Andrew-Velox/animfetch/blob/main/config.example.toml
 
 ### Colours from your desktop theme
 
