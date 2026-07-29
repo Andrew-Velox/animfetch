@@ -6,7 +6,7 @@ below it.
 
 ![animfetch running with a pinned fetch above a working shell](.github/assets/animfetch-demo.gif)
 
-<sub>[Watch as video](.github/assets/animfetch-video.mp4) for a sharper, full-resolution version.</sub>
+<!-- <sub>[Watch as video](.github/assets/animfetch-video.mp4) for a sharper, full-resolution version.</sub> -->
 
 Linux only — all system data comes from `/proc`, `/sys`, and environment
 variables.
