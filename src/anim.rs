@@ -40,6 +40,19 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/cat-tail/08.txt"),
         ],
     ),
+    (
+        "fox-run",
+        &[
+            include_str!("../assets/anim/fox-run/01.txt"),
+            include_str!("../assets/anim/fox-run/02.txt"),
+            include_str!("../assets/anim/fox-run/03.txt"),
+            include_str!("../assets/anim/fox-run/04.txt"),
+            include_str!("../assets/anim/fox-run/05.txt"),
+            include_str!("../assets/anim/fox-run/06.txt"),
+            include_str!("../assets/anim/fox-run/07.txt"),
+            include_str!("../assets/anim/fox-run/08.txt"),
+        ],
+    ),
 ];
 
 /// One frame as a binary coverage mask on a `width * height` grid.
@@ -341,10 +354,14 @@ mod tests {
 
     #[test]
     fn an_unknown_animation_is_an_error_not_a_silent_cat() {
-        let Err(err) = Animation::load(None, "fox-run") else {
+        // Deliberately a name no animation will ever have — an earlier version
+        // of this test used "fox-run", which then got bundled and made it pass
+        // for the wrong reason.
+        let missing = "no-such-animation";
+        let Err(err) = Animation::load(None, missing) else {
             panic!("a typo must not silently resolve to the bundled art");
         };
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
-        assert!(err.to_string().contains("fox-run"), "{err}");
+        assert!(err.to_string().contains(missing), "{err}");
     }
 }
