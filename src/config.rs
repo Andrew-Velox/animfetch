@@ -10,6 +10,20 @@ use serde::Deserialize;
 
 use crate::color::{Color, Gradient, Rgb};
 
+/// How the art is drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Style {
+    /// Half blocks: two vertical samples per cell, solid glyphs only. Crisp
+    /// edges, twice the vertical detail, and small holes stay holes.
+    Half,
+    /// Quadrant blocks: a 2x2 grid of samples per cell. Twice the resolution
+    /// of `half` in both directions, for art with fine detail.
+    Quad,
+    /// A density ramp, configured by `ramp`. Use for a classic ASCII look.
+    Ramp,
+}
+
 /// Which rows appear in the info pane, in order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -37,6 +51,8 @@ pub struct Config {
     pub animation: String,
     /// Frames per second. Also the cadence at which input is drained.
     pub fps: f32,
+    /// How the art is drawn. `ramp` only applies when this is `"ramp"`.
+    pub style: Style,
     /// Density ramp, lowest coverage first. Must be at least one character.
     pub ramp: String,
     /// Vertical colour ramp applied down the art.
@@ -71,6 +87,7 @@ impl Default for Config {
         Self {
             animation: crate::anim::DEFAULT_NAME.into(),
             fps: 12.0,
+            style: Style::Half,
             ramp: " ░▒▓█".into(),
             gradient: Gradient::new(vec![
                 Rgb(0xf5, 0xc9, 0x5c),
@@ -130,6 +147,15 @@ impl Config {
     pub fn ramp(&self) -> Vec<char> {
         let ramp: Vec<char> = self.ramp.chars().collect();
         if ramp.is_empty() { vec![' ', '█'] } else { ramp }
+    }
+
+    /// How to turn coverage into glyphs, for the configured style.
+    pub fn ink<'a>(&self, ramp: &'a [char]) -> crate::anim::Ink<'a> {
+        match self.style {
+            Style::Half => crate::anim::Ink::Half,
+            Style::Quad => crate::anim::Ink::Quad,
+            Style::Ramp => crate::anim::Ink::Ramp(ramp),
+        }
     }
 }
 
@@ -197,6 +223,13 @@ mod tests {
 
         let uncapped: Config = toml::from_str("height = 0").unwrap();
         assert_eq!(uncapped.height(40), 40, "0 means fill");
+    }
+
+    #[test]
+    fn style_selects_the_renderer() {
+        let cfg: Config = toml::from_str(r#"style = "ramp""#).unwrap();
+        assert!(matches!(cfg.ink(&[' ', '#']), crate::anim::Ink::Ramp(_)));
+        assert!(matches!(Config::default().ink(&[' ', '#']), crate::anim::Ink::Half));
     }
 
     #[test]

@@ -44,6 +44,29 @@ than as characters, so they resample to any size. `width` and `height` define a
 box, and the art is fitted inside it with its aspect ratio kept — so a tall
 animation and a wide one still come out looking the same size.
 
+**Coverage becomes glyphs in one of three styles**, which fail differently:
+
+| `style` | samples per cell | notes |
+| --- | --- | --- |
+| `half` (default) | 2, stacked | `▀▄█`. Solid glyphs, crisp edges, double vertical detail. |
+| `quad` | 4, in a 2x2 grid | `▘▝▖▗▚▞…`. Double detail in *both* directions. |
+| `ramp` | 1 | Density-mapped through `ramp`. Classic ASCII look. |
+
+`half` and `quad` threshold each sample, so a hole stays a hole. `ramp` averages,
+which softens them — and its default shaded blocks (`░▒▓`) are stipple patterns
+in most fonts, so edges read as noise.
+
+**Enclosed holes are preserved exactly.** Blank cells that cannot be reached
+from the border without crossing ink — an eye, a nostril — are flood-filled out
+and forced blank in the output, whatever the surrounding coverage says. Without
+this a two-cell eye survives or vanishes depending on how each pose happens to
+land on the output grid, so it flickers as the animation plays. Isolated
+single-cell gaps are ignored as drawing artefacts, since forcing a whole output
+cell blank for one source cell would speckle a solid body.
+
+A detail still needs enough `width` to read *well*: at 100 source columns, a
+2-column eye needs roughly 60+ cells to land as a clean, symmetric gap.
+
 **Raw mode with a non-blocking event poll** means the animation and the prompt
 are not competing for the loop. Each pass draws a frame, then waits for input
 *only until the next frame is due*, so keystrokes are handled the moment they

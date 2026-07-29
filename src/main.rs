@@ -218,9 +218,10 @@ impl Layout {
         let max_w = cfg.width(w.saturating_sub(info_w + cfg.gap).max(8));
         let (art_w, art_h) = animation.fit(max_w, max_h.max(4));
         let ramp = cfg.ramp();
+        let ink = cfg.ink(&ramp);
 
         Self {
-            frames: animation.frames.iter().map(|f| f.scale(art_w, art_h, &ramp)).collect(),
+            frames: animation.frames.iter().map(|f| f.scale(art_w, art_h, ink)).collect(),
             art_w,
         }
     }
@@ -584,6 +585,7 @@ fn draw_once(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -
 struct Args {
     animation: Option<String>,
     fps: Option<f32>,
+    style: Option<config::Style>,
     width: Option<usize>,
     height: Option<usize>,
     play: bool,
@@ -628,6 +630,15 @@ impl Args {
                     let raw = argv.next().ok_or("--width needs a number of columns")?;
                     args.width = Some(raw.parse().map_err(|_| format!("not a number: {raw}"))?);
                 }
+                "--style" => {
+                    let raw = argv.next().ok_or("--style needs half, quad, or ramp")?;
+                    args.style = Some(match raw.as_str() {
+                        "half" => config::Style::Half,
+                        "quad" => config::Style::Quad,
+                        "ramp" => config::Style::Ramp,
+                        other => return Err(format!("unknown style: {other} (half, quad, or ramp)")),
+                    });
+                }
                 "-H" | "--height" => {
                     let raw = argv.next().ok_or("--height needs a number of rows")?;
                     args.height = Some(raw.parse().map_err(|_| format!("not a number: {raw}"))?);
@@ -649,6 +660,9 @@ impl Args {
         }
         if let Some(fps) = self.fps {
             cfg.fps = fps;
+        }
+        if let Some(style) = self.style {
+            cfg.style = style;
         }
         if let Some(width) = self.width {
             cfg.width = width;
@@ -682,6 +696,7 @@ Animations:
 
 Options:
   -f, --fps <N>           Frames per second
+      --style <STYLE>     half (default), quad (finest detail), ramp (ASCII)
   -W, --width <COLS>      Cap the art width (0 fills the screen)
   -H, --height <ROWS>     Cap the art height (0 fills the screen)
   -s, --seconds <N>       How long --play animates

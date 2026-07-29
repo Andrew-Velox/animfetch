@@ -26,9 +26,19 @@ height = 20
 # How long `animfetch --play` animates before handing back to your shell.
 play_seconds = 3.0
 
-# Density ramp, lowest ink coverage first. Frames are scaled by averaging the
-# ink in each source block, then picking the character of matching density.
-# Try " .:-=+*#%@" for a classic ASCII look, or " █" for hard edges.
+# How the art is drawn.
+#
+#   half  Two vertical samples per cell, drawn with half blocks (▀▄█). Solid
+#         glyphs only, so edges are crisp and small holes stay holes.
+#   quad  Four samples per cell in a 2x2 grid (▘▝▖▗▚▞…). Twice the resolution
+#         of half in both directions, for art with fine detail.
+#   ramp  One sample per cell, mapped onto `ramp` below by density. Use it for
+#         a classic ASCII look — but note the shaded blocks are stipple
+#         patterns in most fonts, which reads as noise along edges.
+style = "half"
+
+# Only used when style = "ramp". Lowest ink coverage first.
+# Try " .:-=+*#%@" for classic ASCII, or " █" for hard edges.
 ramp = " ░▒▓█"
 
 # Vertical colour ramp down the art. An empty list leaves the art uncoloured.
