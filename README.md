@@ -131,10 +131,11 @@ animfetch --set cat-tail     # make it the default, saved to config.toml
 
 ```
 $ animfetch --list
-  cat-run    5 frames  built in
-* cat-tail   8 frames  built in
-  fox-run    8 frames  built in
-  dog-run   12 frames  /home/you/.config/animfetch/anim/dog-run
+  cat-run       5 frames  built in
+* cat-tail      8 frames  built in
+  dolphin-run   9 frames  built in
+  fox-run       8 frames  built in
+  dog-run      12 frames  /home/you/.config/animfetch/anim/dog-run
 ```
 
 `--set` rewrites only the `animation` line in your config, leaving comments and
@@ -191,7 +192,8 @@ afterwards rather than refusing to start.
 
 ### Custom animations
 
-Three animations ship in the binary: `cat-run`, `cat-tail`, and `fox-run`.
+Four animations ship in the binary: `cat-run`, `cat-tail`, `dolphin-run`, and
+`fox-run`.
 
 For your own, drop plain-text frames into `~/.config/animfetch/anim/<name>/`,
 one file per frame, named so they sort in order (`01.txt`, `02.txt`, …). Then:
