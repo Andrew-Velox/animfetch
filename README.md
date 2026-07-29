@@ -97,16 +97,22 @@ knows where the numbers come from.
 
 ## Usage
 
-There are three modes:
+There are four modes:
 
 ```
-animfetch                    # interactive: fetch pinned above, prompt below
+animfetch --pin              # pin above YOUR shell, keep animating in background
 animfetch --play             # animate in place for a few seconds, then exit
 animfetch --once             # print one static frame and exit
+animfetch                    # interactive: animfetch owns the prompt
 ```
 
-`--play` is the one for a shell startup file. It animates where the cursor
-already is and then hands control back, so your own prompt follows underneath.
+**`--pin` is the interesting one.** It sets up the scroll region, detaches into
+the background, and paints the top rows while your own shell — with your prompt,
+your history, your completions, your aliases — runs underneath. Undo it with
+`animfetch --unpin`.
+
+`--play` animates where the cursor already is and then hands control back, for
+when you want the animation to finish rather than persist.
 
 ```
 animfetch -a cat-tail        # different animation, this run only
@@ -155,12 +161,19 @@ as does `NO_COLOR=1` for colour.
 
 ### In your shell startup
 
-Use `--play` (or `--once` for no animation). The default mode waits for input,
-which is not what you want on every new terminal:
-
 ```sh
-animfetch --play
+animfetch --pin      # keeps animating while you work
+# or
+animfetch --play     # animates for a few seconds, then gets out of the way
+# or
+animfetch --once     # static, instant
 ```
+
+Do not put the bare `animfetch` there: it waits for input, and it replaces your
+shell for as long as it runs.
+
+`--pin` is idempotent per terminal — a second one in a nested shell notices the
+first and exits silently, so it is safe in a file that runs for every shell.
 
 `--play` deliberately never enters raw mode, so anything you type during the
 intro stays in the terminal's line buffer and arrives at your real prompt

@@ -16,6 +16,7 @@ mod anim;
 mod color;
 mod config;
 mod fetch;
+mod pin;
 mod prompt;
 mod render;
 mod term;
@@ -91,6 +92,17 @@ fn run() -> io::Result<ExitCode> {
 
     if !interactive || args.once {
         return draw_once(&animation, &cfg, &title, &items).map(|()| ExitCode::SUCCESS);
+    }
+
+    if args.unpin {
+        if !pin::stop()? {
+            eprintln!("animfetch: nothing pinned to this terminal");
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if args.pin {
+        return pin::start(&animation, &cfg, &title, &items).map(|()| ExitCode::SUCCESS);
     }
 
     if args.play {
@@ -172,9 +184,9 @@ fn set_animation(dir: &std::path::Path, name: &str) -> io::Result<std::path::Pat
 const CLEAR_LINE: &str = "\x1b[K";
 
 /// Pre-scaled frames for one terminal size.
-struct Layout {
-    frames: Vec<Vec<String>>,
-    art_w: usize,
+pub struct Layout {
+    pub frames: Vec<Vec<String>>,
+    pub art_w: usize,
 }
 
 impl Layout {
@@ -190,7 +202,7 @@ impl Layout {
     ///
     /// `max_h` is the caller's row budget for the whole pane, not the terminal
     /// height — the interactive session keeps most of the screen for output.
-    fn build(animation: &Animation, cfg: &Config, title: &str, items: &[Item], w: usize, max_h: usize) -> Self {
+    pub fn build(animation: &Animation, cfg: &Config, title: &str, items: &[Item], w: usize, max_h: usize) -> Self {
         if w < Self::MIN_SPLIT_WIDTH {
             // One empty frame rather than none, so the loop's `phase % len`
             // indexing stays valid without a special case.
@@ -228,11 +240,11 @@ impl Layout {
 }
 
 /// How the screen is divided between the pinned fetch and the scrolling area.
-struct Split {
+pub struct Split {
     /// Rows the fetch pane occupies, starting at row 1.
-    pane_h: usize,
+    pub pane_h: usize,
     /// 1-based first row of the scroll region, one blank row below the pane.
-    scroll_top: u16,
+    pub scroll_top: u16,
 }
 
 impl Split {
@@ -245,7 +257,7 @@ impl Split {
     const PANE_HEIGHT_SHARE: usize = 55;
 
     /// Row budget for the pane on a terminal of `rows` rows.
-    fn budget(rows: u16) -> usize {
+    pub fn budget(rows: u16) -> usize {
         let rows = rows as usize;
         (rows * Self::PANE_HEIGHT_SHARE / 100)
             .min(rows.saturating_sub(Self::MIN_SCROLL_ROWS + 1))
@@ -254,7 +266,7 @@ impl Split {
 
     /// `None` on a terminal too short to usefully divide, in which case the
     /// fetch is skipped and the whole screen behaves as a plain prompt.
-    fn new(pane_lines: usize, rows: u16) -> Option<Self> {
+    pub fn new(pane_lines: usize, rows: u16) -> Option<Self> {
         let max_pane = (rows as usize).checked_sub(Self::MIN_SCROLL_ROWS + 1)?;
         let pane_h = pane_lines.min(max_pane);
         (pane_h > 0).then(|| Self { pane_h, scroll_top: pane_h as u16 + 2 })
@@ -589,6 +601,8 @@ struct Args {
     width: Option<usize>,
     height: Option<usize>,
     play: bool,
+    pin: bool,
+    unpin: bool,
     seconds: Option<f32>,
     list: bool,
     set: Option<String>,
@@ -614,6 +628,8 @@ impl Args {
                 }
                 "-1" | "--once" => args.once = true,
                 "-p" | "--play" => args.play = true,
+                "--pin" => args.pin = true,
+                "--unpin" => args.unpin = true,
                 "-l" | "--list" => args.list = true,
                 "--set" => {
                     args.set = Some(argv.next().ok_or("--set needs an animation name")?);
@@ -685,9 +701,12 @@ animfetch — animated system fetch with a live prompt
 Usage: animfetch [OPTIONS]
 
 Modes:
-  (default)               Interactive: fetch pinned above, prompt below
+      --pin               Pin the fetch above your own shell and keep animating
+                          in the background. Undo with --unpin.
   -p, --play              Animate in place for a few seconds, then exit
   -1, --once              Print one static frame and exit
+  (default)               Interactive: fetch pinned above, animfetch's own
+                          prompt below
 
 Animations:
   -a, --animation <NAME>  Use NAME for this run only
