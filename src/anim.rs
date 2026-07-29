@@ -88,7 +88,6 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/blackhole/07.txt"),
             include_str!("../assets/anim/blackhole/08.txt"),
             include_str!("../assets/anim/blackhole/09.txt"),
-            include_str!("../assets/anim/blackhole/10.txt"),
         ],
     ),
 ];
