@@ -93,6 +93,18 @@ fn install_panic_hook() {
 pub const HIDE_CURSOR: &str = "\x1b[?25l";
 pub const SHOW_CURSOR: &str = "\x1b[?25h";
 pub const RESET_SCROLL_REGION: &str = "\x1b[r";
+
+/// DECOM. With origin mode set, row addressing is relative to the scroll
+/// region and the cursor cannot leave it.
+///
+/// This is what keeps `clear` from stranding the shell above a pinned fetch:
+/// `clear` homes the cursor with `ESC[H`, which without this means screen row
+/// 1 — inside the pinned rows, where the shell's prompt is then painted over.
+pub const SET_ORIGIN_MODE: &str = "\x1b[?6h";
+pub const RESET_ORIGIN_MODE: &str = "\x1b[?6l";
+
+/// Home the cursor. Under origin mode this is the scroll region's top-left.
+pub const HOME: &str = "\x1b[H";
 pub const CLEAR_SCREEN: &str = "\x1b[2J";
 
 /// Confine scrolling to `top..=bottom`, 1-based and inclusive.

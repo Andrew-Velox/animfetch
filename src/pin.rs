@@ -61,10 +61,11 @@ pub fn start(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -
     let mut stdout = io::stdout();
     write!(
         stdout,
-        "{}{}{}",
+        "{}{}{}{}",
         term::CLEAR_SCREEN,
         term::scroll_region(split.scroll_top, rows),
-        term::move_to(split.scroll_top, 1)
+        term::SET_ORIGIN_MODE,
+        term::HOME
     )?;
     stdout.flush()?;
 
@@ -100,7 +101,12 @@ pub fn start(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -
     let _ = std::fs::remove_file(pid_path()?);
 
     // The terminal is usually already gone by here; resetting is best effort.
-    let _ = write!(io::stdout(), "{}", term::RESET_SCROLL_REGION);
+    let _ = write!(
+        io::stdout(),
+        "{}{}",
+        term::RESET_ORIGIN_MODE,
+        term::RESET_SCROLL_REGION
+    );
     let _ = io::stdout().flush();
     result
 }
@@ -116,7 +122,13 @@ pub fn stop() -> io::Result<bool> {
     let _ = std::fs::remove_file(pid_path()?);
 
     let mut stdout = io::stdout();
-    write!(stdout, "{}{}", term::RESET_SCROLL_REGION, term::CLEAR_SCREEN)?;
+    write!(
+        stdout,
+        "{}{}{}",
+        term::RESET_ORIGIN_MODE,
+        term::RESET_SCROLL_REGION,
+        term::CLEAR_SCREEN
+    )?;
     write!(stdout, "{}", term::move_to(1, 1))?;
     stdout.flush()?;
     Ok(true)
@@ -131,7 +143,7 @@ fn animate(
     shell_pid: libc::pid_t,
 ) -> io::Result<()> {
     let mut stdout = io::stdout();
-    let mut pane = Pane::new();
+    let mut pane = Pane::new().with_origin_mode();
 
     let (mut cols, mut rows) = term::size();
     let mut budget = cfg.height(Split::budget(rows));
@@ -171,8 +183,9 @@ fn animate(
                 // shell's cursor must come back exactly where it was.
                 write!(
                     stdout,
-                    "\x1b7{}\x1b8",
-                    term::scroll_region(split.as_ref().map_or(1, |s| s.scroll_top), rows)
+                    "\x1b7{}{}\x1b8",
+                    term::scroll_region(split.as_ref().map_or(1, |s| s.scroll_top), rows),
+                    term::SET_ORIGIN_MODE
                 )?;
                 pane.invalidate();
             }
@@ -199,7 +212,12 @@ fn animate(
                 split = Split::new(compose(&layout, cfg, title, items, 0, cols).len(), rows);
 
                 if let Some(s) = &split {
-                    write!(stdout, "\x1b7{}\x1b8", term::scroll_region(s.scroll_top, rows))?;
+                    write!(
+                        stdout,
+                        "\x1b7{}{}\x1b8",
+                        term::scroll_region(s.scroll_top, rows),
+                        term::SET_ORIGIN_MODE
+                    )?;
                 }
                 pane.invalidate();
             }

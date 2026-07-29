@@ -228,8 +228,9 @@ It is a launcher with a prompt, not a shell. Specifically:
 - **No history, completion, or line editing** beyond backspace and the two
   control keys above.
 - **Full-screen programs** (`vim`, `less`, `htop`) work, because they use the
-  alternate screen and restore it on exit. A program that clears the screen
-  *without* the alternate screen will wipe the fetch until the next repaint.
+  alternate screen and restore it on exit — and under `--pin` the animation
+  pauses while they hold the terminal. A program that clears the screen without
+  the alternate screen wipes the art for a frame; `--pin` repaints it.
 
 ## A note on the prompt
 

@@ -241,6 +241,13 @@ fn truncate(s: &str, width: usize) -> String {
 pub struct Pane {
     prev: Vec<String>,
     needs_clear: bool,
+    /// Whether the caller has origin mode set on the terminal.
+    ///
+    /// This pane addresses rows absolutely, but origin mode makes row numbers
+    /// relative to the scroll region — which would place the art *inside* the
+    /// region it is supposed to sit above. When set, each frame turns origin
+    /// mode off for its own duration and puts it back.
+    origin_mode: bool,
 }
 
 /// Save/restore cursor position and attributes (DECSC/DECRC).
@@ -255,7 +262,14 @@ const END_SYNC: &str = "\x1b[?2026l";
 
 impl Pane {
     pub fn new() -> Self {
-        Self { prev: Vec::new(), needs_clear: true }
+        Self { prev: Vec::new(), needs_clear: true, origin_mode: false }
+    }
+
+    /// Declare that the terminal is in origin mode, so painting can opt out of
+    /// it for the duration of each frame.
+    pub fn with_origin_mode(mut self) -> Self {
+        self.origin_mode = true;
+        self
     }
 
     /// Force a full repaint. Required after a resize, and after any child
@@ -275,6 +289,9 @@ impl Pane {
 
         buf.push_str(BEGIN_SYNC);
         buf.push_str(SAVE_CURSOR);
+        if self.origin_mode {
+            buf.push_str(crate::term::RESET_ORIGIN_MODE);
+        }
 
         if self.needs_clear {
             // Clear only the pane's own rows. Wiping the whole screen would
@@ -300,6 +317,9 @@ impl Pane {
             let _ = write!(buf, "\x1b[{};1H\x1b[2K", y + 1);
         }
 
+        if self.origin_mode {
+            buf.push_str(crate::term::SET_ORIGIN_MODE);
+        }
         buf.push_str(RESTORE_CURSOR);
         buf.push_str(END_SYNC);
 
@@ -425,6 +445,25 @@ mod tests {
         let written = String::from_utf8(buf).unwrap();
         assert!(written.starts_with("\x1b[?2026h\x1b7"), "{written:?}");
         assert!(written.ends_with("\x1b8\x1b[?2026l"), "{written:?}");
+    }
+
+    #[test]
+    fn origin_mode_is_suspended_for_the_paint_and_restored() {
+        // Absolute row addressing is only absolute with origin mode off; the
+        // art would otherwise be drawn inside the very region it sits above.
+        let mut pane = Pane::new().with_origin_mode();
+        let mut buf = Vec::new();
+        pane.paint(&mut buf, &["a".into()], 4).unwrap();
+
+        let written = String::from_utf8(buf).unwrap();
+        assert!(written.starts_with("\x1b[?2026h\x1b7\x1b[?6l"), "{written:?}");
+        assert!(written.ends_with("\x1b[?6h\x1b8\x1b[?2026l"), "{written:?}");
+
+        // The default pane must not emit them at all.
+        let mut plain = Pane::new();
+        let mut buf = Vec::new();
+        plain.paint(&mut buf, &["a".into()], 4).unwrap();
+        assert!(!String::from_utf8(buf).unwrap().contains("\x1b[?6"));
     }
 
     #[test]
