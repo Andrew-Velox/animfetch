@@ -34,24 +34,31 @@ variables.
 
 ## Install
 
-Linux, and Rust 1.88 or newer to build.
+### Arch Linux
+
+```sh
+paru -S animfetch-bin      # or: yay -S animfetch-bin
+```
+
+### Any Linux
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
+```
+
+A static binary, so no Rust and no dependencies. Goes to `~/.local/bin`, or
+`/usr/local/bin` as root; set `ANIMFETCH_BINDIR` to override. To read it before
+running it, download it first — it is short.
+
+### From source
+
+Needs Rust 1.88 or newer.
 
 ```sh
 cargo install --locked --git https://github.com/Andrew-Velox/animfetch
 ```
 
-Installs to `~/.cargo/bin` — make sure that is on your `PATH`.
-
-Or from a clone:
-
-```sh
-git clone https://github.com/Andrew-Velox/animfetch
-cd animfetch
-cargo build --release
-install -Dm755 target/release/animfetch ~/.local/bin/animfetch
-```
-
-Update with `cargo install --locked --force --git ...`, remove with
+Installs to `~/.cargo/bin`. Update with `--force`, remove with
 `cargo uninstall animfetch`.
 
 ## Usage

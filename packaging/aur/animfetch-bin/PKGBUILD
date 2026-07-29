@@ -1,0 +1,44 @@
+# Maintainer: Andrew-Velox <mohabbat.bd2020@gmail.com>
+#
+# Installs the prebuilt static binary from a GitHub Release, so this needs no
+# Rust toolchain and takes a second. Publish it to the AUR as `animfetch-bin`.
+# Bump `pkgver`, refresh the checksums with `updpkgsums`, and push.
+
+pkgname=animfetch-bin
+_pkgname=animfetch
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Animated system fetch that stays pinned above your shell while you work'
+arch=('x86_64' 'aarch64')
+url='https://github.com/Andrew-Velox/animfetch'
+# TODO: add a LICENSE file to the repository and set this to match it. Arch
+# requires the text of a non-standard licence to be installed with the package,
+# so the AUR will reject this until both this field and the `install` line in
+# package() are real. See the note in packaging/README.md.
+license=('MIT')
+provides=("$_pkgname=$pkgver")
+conflicts=("$_pkgname")
+
+# Static musl builds, so no depends=() at all.
+source_x86_64=("$_pkgname-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/$_pkgname-v$pkgver-x86_64-unknown-linux-musl.tar.gz")
+source_aarch64=("$_pkgname-$pkgver-aarch64.tar.gz::$url/releases/download/v$pkgver/$_pkgname-v$pkgver-aarch64-unknown-linux-musl.tar.gz")
+# SKIP only until the first release exists. Once it does, run `updpkgsums` here
+# to pin the real checksums — an AUR package that skips them gives whoever
+# installs it no way to notice a tampered download.
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+	# $CARCH is the leading component of the target triple for both
+	# architectures this ships, so it doubles as the directory name.
+	cd "$_pkgname-v$pkgver-$CARCH-unknown-linux-musl"
+
+	install -Dm755 "$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+	install -Dm644 config.example.toml \
+		"$pkgdir/usr/share/$_pkgname/config.example.toml"
+	install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"
+
+	# Uncomment once the release tarballs carry a LICENSE file. Required before
+	# this can go to the AUR.
+	# install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

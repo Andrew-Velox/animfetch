@@ -1,0 +1,119 @@
+name: release
+
+# Publishing is what makes animfetch installable without a Rust toolchain. Push
+# a tag and this attaches ready-to-run binaries to a GitHub Release, which is
+# what `install.sh` and the AUR `-bin` package both fetch from.
+on:
+  push:
+    tags: ['v*']
+  # Re-run against an existing tag if a release needs rebuilding. Check out the
+  # tag itself when dispatching, not a branch — the version comes from the ref.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      # One architecture failing should not hide whether the other worked.
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # musl, not glibc. A glibc binary built here refuses to start on any
+      # distro with an older glibc than the runner's, which is most of the point
+      # of shipping a binary at all. Every dependency is pure Rust, so the musl
+      # target needs no C toolchain — see `cargo tree`.
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add ${{ matrix.target }}
+          rustup default stable
+          rustc --version
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Check the binary is actually static
+        run: |
+          bin=target/${{ matrix.target }}/release/animfetch
+          file "$bin"
+          # A dynamically linked result would defeat the purpose, so fail here
+          # rather than ship something that breaks on the user's machine.
+          if ldd "$bin" 2>&1 | grep -q '=>'; then
+            echo "::error::$bin is dynamically linked"
+            exit 1
+          fi
+
+      # Both runners are native for their architecture, so the binary that gets
+      # shipped is the one that just ran.
+      - name: Smoke test
+        run: |
+          bin=target/${{ matrix.target }}/release/animfetch
+          "$bin" --version
+          "$bin" --list
+          "$bin" --once
+
+      - name: Package
+        run: |
+          name=animfetch-${GITHUB_REF_NAME}-${{ matrix.target }}
+          mkdir -p "dist/$name"
+          cp target/${{ matrix.target }}/release/animfetch "dist/$name/"
+          cp README.md config.example.toml "dist/$name/"
+          tar -C dist -czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            *.tar.gz
+            *.tar.gz.sha256
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # One combined file, because that is what `install.sh` fetches to verify
+      # whichever tarball it picked.
+      - name: Collect checksums
+        run: |
+          cd dist
+          cat ./*.tar.gz.sha256 > SHA256SUMS
+          rm ./*.tar.gz.sha256
+          cat SHA256SUMS
+
+      # `gh` is preinstalled on the runner, so this needs no third-party action
+      # holding a token that can write to the repository.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/* \
+          || gh release upload "$GITHUB_REF_NAME" dist/* --clobber
