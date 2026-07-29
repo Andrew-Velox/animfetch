@@ -1,0 +1,22 @@
+# Build artifacts
+/target/
+
+# Cargo.lock IS committed: this is a binary crate, so pinning exact dependency
+# versions is what makes a build reproducible. Do not add it here.
+
+# rustfmt backups
+**/*.rs.bk
+
+# Machine-specific tool settings, not project configuration
+.claude/settings.local.json
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS noise
+.DS_Store
+Thumbs.db

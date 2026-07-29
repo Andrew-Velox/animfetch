@@ -1,0 +1,63 @@
+# animfetch configuration.
+#
+# Copy to ~/.config/animfetch/config.toml. Every key is optional — anything you
+# leave out keeps its default, and an unreadable file falls back to defaults
+# with a warning rather than refusing to start.
+
+# Animation to play: a directory name under ~/.config/animfetch/anim/.
+# "cat-run" is built into the binary; a directory of the same name overrides it.
+# Any other name must exist on disk, or animfetch reports it rather than
+# silently falling back.
+animation = "cat-run"
+
+# Frames per second. Clamped to 1–120.
+fps = 12.0
+
+# Largest number of rows the fetch may occupy. The art scales to fit, keeping
+# its aspect ratio. Set 0 to let it fill the screen — on a tall terminal that
+# means a very large cat.
+height = 20
+
+# How long `animfetch --play` animates before handing back to your shell.
+play_seconds = 3.0
+
+# Density ramp, lowest ink coverage first. Frames are scaled by averaging the
+# ink in each source block, then picking the character of matching density.
+# Try " .:-=+*#%@" for a classic ASCII look, or " █" for hard edges.
+ramp = " ░▒▓█"
+
+# Vertical colour ramp down the art. An empty list leaves the art uncoloured.
+gradient = ["#f5c95c", "#f17f5b", "#f45c82", "#b07cf4", "#74a4ff"]
+
+# Scroll the gradient through the art as it plays.
+gradient_scroll = true
+
+# Info pane colours.
+accent = "#74a4ff"   # user@host, the rule, and labels
+value  = "#c8ccd4"   # values
+
+# Blank columns between the art and the info pane.
+gap = 4
+
+# Set false to disable colour. It is forced off anyway when stdout is not a
+# terminal or NO_COLOR is set.
+color = true
+
+# Rows in the info pane, in order. Remove any you do not want.
+# Available: os, host, kernel, uptime, packages, shell, wm, terminal,
+#            cpu, memory, swap, disk, colors
+modules = [
+  "os",
+  "host",
+  "kernel",
+  "uptime",
+  "packages",
+  "shell",
+  "wm",
+  "terminal",
+  "cpu",
+  "memory",
+  "swap",
+  "disk",
+  "colors",
+]
