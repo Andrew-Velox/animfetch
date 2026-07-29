@@ -15,6 +15,7 @@
 //! hook covers panics.
 
 use std::io::{self, Write};
+use std::os::fd::{AsRawFd, RawFd};
 
 use crossterm::terminal;
 
@@ -122,6 +123,43 @@ pub fn move_to(row: u16, col: u16) -> String {
 
 /// Terminal size in cells, with a usable fallback when stdout is not a TTY
 /// (piped output still needs *some* geometry to lay out against).
+///
+/// The ioctl is issued directly rather than through crossterm, which opens
+/// `/dev/tty` on every call and, failing that, shells out to `tput`. That costs
+/// about a millisecond — a third of the startup this tool is meant to add to a
+/// shell, and paid again twice a second for as long as a pinned fetch runs.
 pub fn size() -> (u16, u16) {
-    terminal::size().unwrap_or((100, 40))
+    // Whichever of our own streams is still a terminal knows the size already.
+    for fd in [libc::STDOUT_FILENO, libc::STDERR_FILENO, libc::STDIN_FILENO] {
+        if let Some(size) = winsize(fd) {
+            return size;
+        }
+    }
+
+    // All three are redirected, but a controlling terminal may still exist and
+    // its width is the right one to lay out against. Only reached when the
+    // cheap path found nothing, so the open costs nothing in the normal case.
+    if let Ok(tty) = std::fs::File::open("/dev/tty")
+        && let Some(size) = winsize(tty.as_raw_fd())
+    {
+        return size;
+    }
+
+    (100, 40)
+}
+
+/// `(columns, rows)` for a file descriptor, or `None` if it is not a terminal.
+fn winsize(fd: RawFd) -> Option<(u16, u16)> {
+    let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+
+    // SAFETY: TIOCGWINSZ writes a `winsize` through the pointer and nothing
+    // else, `ws` is exactly that and is writable, and failure is reported by
+    // the return value rather than by leaving `ws` in some invalid state.
+    if unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &raw mut ws) } != 0 {
+        return None;
+    }
+
+    // A terminal that reports zero is one we cannot lay out against; treat it
+    // the same as no terminal at all and let the caller fall back.
+    (ws.ws_col > 0 && ws.ws_row > 0).then_some((ws.ws_col, ws.ws_row))
 }

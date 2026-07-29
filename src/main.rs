@@ -16,6 +16,7 @@ mod anim;
 mod color;
 mod config;
 mod fetch;
+mod palette;
 mod pin;
 mod prompt;
 mod render;
@@ -57,6 +58,10 @@ fn run() -> io::Result<ExitCode> {
     let dir = config::config_dir();
     let (mut cfg, warning) = config::load(dir.as_deref());
     args.apply(&mut cfg);
+
+    // Before anything is drawn, so every mode gets the same colours. `--pin`
+    // additionally re-reads the file while it runs; see `palette::Watch`.
+    palette::apply(&mut cfg);
 
     let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
     // Colour is meaningless once the output is piped into a file, and NO_COLOR
@@ -222,7 +227,11 @@ impl<'a> Layout<'a> {
     ///
     /// `max_h` is the caller's row budget for the whole pane, not the terminal
     /// height — the interactive session keeps most of the screen for output.
-    fn build(fetch: &Fetch<'a>, cols: u16, max_h: usize) -> Self {
+    ///
+    /// `wanted` caps how many frames are scaled. Scaling is the expensive half
+    /// of building a layout, and a caller that draws one still frame has no use
+    /// for the other eight.
+    fn build(fetch: &Fetch<'a>, cols: u16, max_h: usize, wanted: usize) -> Self {
         let &Fetch { animation, cfg, title, items } = fetch;
         let w = cols as usize;
 
@@ -254,7 +263,12 @@ impl<'a> Layout<'a> {
             let ramp = cfg.ramp();
             let ink = cfg.ink(&ramp);
 
-            let frames = animation.frames.iter().map(|f| f.scale(art_w, art_h, ink)).collect();
+            let frames = animation
+                .frames
+                .iter()
+                .take(wanted)
+                .map(|f| f.scale(art_w, art_h, ink))
+                .collect();
             (frames, art_w)
         };
 
@@ -263,13 +277,19 @@ impl<'a> Layout<'a> {
 
     /// Layout for the pinned pane on a terminal of this size.
     pub fn pinned(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
-        Self::build(fetch, cols, fetch.cfg.height(Split::budget(rows)))
+        Self::build(fetch, cols, fetch.cfg.height(Split::budget(rows)), usize::MAX)
     }
 
     /// Layout for a one-off drawing that owns the whole terminal but for the
     /// row the shell prompt will land on.
     pub fn full_screen(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
-        Self::build(fetch, cols, fetch.cfg.height(rows.saturating_sub(1) as usize))
+        Self::build(fetch, cols, fetch.cfg.height(rows.saturating_sub(1) as usize), usize::MAX)
+    }
+
+    /// The same geometry as [`Self::full_screen`], but only the frame a static
+    /// drawing will actually use.
+    pub fn still(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
+        Self::build(fetch, cols, fetch.cfg.height(rows.saturating_sub(1) as usize), 1)
     }
 
     /// What to draw for frame `phase`.
@@ -587,7 +607,7 @@ fn animate_in_place(
 /// This is what runs when stdout is a pipe, and what `--once` forces.
 fn draw_once(fetch: &Fetch<'_>) -> io::Result<()> {
     let (cols, rows) = term::size();
-    let layout = Layout::full_screen(fetch, cols, rows);
+    let layout = Layout::still(fetch, cols, rows);
     let lines = render::compose(&layout.scene(0), fetch.cfg);
 
     let mut out = io::stdout().lock();
@@ -614,6 +634,7 @@ struct Args {
     set: Option<String>,
     once: bool,
     no_color: bool,
+    palette: bool,
 }
 
 impl Args {
@@ -641,6 +662,7 @@ impl Args {
                     args.set = Some(argv.next().ok_or("--set needs an animation name")?);
                 }
                 "--no-color" => args.no_color = true,
+                "--palette" => args.palette = true,
                 "-a" | "--animation" => {
                     args.animation = Some(argv.next().ok_or("--animation needs a name")?);
                 }
@@ -698,6 +720,9 @@ impl Args {
         if self.no_color {
             cfg.color = false;
         }
+        if self.palette {
+            cfg.color_source = config::ColorSource::Palette;
+        }
     }
 }
 
@@ -725,6 +750,8 @@ Options:
   -W, --width <COLS>      Cap the art width (0 fills the screen)
   -H, --height <ROWS>     Cap the art height (0 fills the screen)
   -s, --seconds <N>       How long --play animates
+      --palette           Take colours from your desktop's generated palette
+                          (matugen, pywal, wallust) instead of the config
       --no-color          Disable colour output
   -h, --help              Show this help
   -V, --version           Show the version

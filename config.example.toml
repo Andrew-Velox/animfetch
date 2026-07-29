@@ -51,6 +51,37 @@ gradient_scroll = true
 accent = "#74a4ff"   # user@host, the rule, and labels
 value  = "#c8ccd4"   # values
 
+# Where the three colours above come from.
+#
+#   "config"  – exactly as written above (default)
+#   "palette" – look them up in whatever file themes your desktop, so the fetch
+#               follows your wallpaper. Anything the file does not define keeps
+#               the value above, so this can only add colour, never remove it.
+#
+# Try it without editing anything: animfetch --once --palette
+color_source = "config"
+
+# Candidate palette files, most preferred first; the first that exists wins.
+palette_files = [
+  "~/.local/state/quickshell/user/generated/colors.json",  # matugen
+  "~/.cache/wal/colors.json",                              # pywal
+  "~/.cache/wallust/colors.json",                          # wallust
+]
+
+# Which names to read out of that file. These defaults are Material You role
+# names, as written by matugen. pywal and wallust name theirs color0..color15
+# instead, so with those you want something like:
+#
+#   palette_accent   = "color4"
+#   palette_value    = "color7"
+#   palette_gradient = ["color4", "color5", "color6"]
+palette_accent   = "primary"
+palette_value    = "on_surface"
+palette_gradient = ["primary", "secondary", "tertiary"]
+
+# Under --pin the palette file is re-read when it changes, so retheming your
+# desktop recolours the running animation without restarting it.
+
 # Blank columns between the art and the info pane.
 gap = 4
 

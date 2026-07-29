@@ -105,18 +105,17 @@ pub struct Frame {
 
 impl Frame {
     fn parse(text: &str) -> Self {
-        let rows: Vec<Vec<bool>> = text
-            .lines()
-            .map(|line| line.chars().map(|c| !c.is_whitespace()).collect())
-            .collect();
+        let height = text.lines().count();
+        let width = text.lines().map(|line| line.chars().count()).max().unwrap_or(0);
 
-        let height = rows.len();
-        let width = rows.iter().map(Vec::len).max().unwrap_or(0);
-
-        // Flatten into a rectangle; short lines pad with blanks.
+        // Written straight into the rectangle rather than into a row of vectors
+        // that is then copied; short lines are left as the blanks they pad with.
         let mut ink = vec![false; width * height];
-        for (y, row) in rows.iter().enumerate() {
-            ink[y * width..y * width + row.len()].copy_from_slice(row);
+        for (y, line) in text.lines().enumerate() {
+            let row = &mut ink[y * width..(y + 1) * width];
+            for (cell, c) in row.iter_mut().zip(line.chars()) {
+                *cell = !c.is_whitespace();
+            }
         }
 
         let hole = Self::enclosed_holes(&ink, width, height);

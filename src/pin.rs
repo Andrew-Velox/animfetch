@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::render::Pane;
-use crate::{Fetch, Layout, Split, render, term};
+use crate::{Fetch, Layout, Split, palette, render, term};
 
 /// How often to re-check the terminal size while pinned.
 const RESIZE_POLL: Duration = Duration::from_millis(500);
@@ -139,6 +139,13 @@ fn animate(
     let mut stdout = io::stdout();
     let mut pane = Pane::new().with_origin_mode();
 
+    // Colours are the one thing that can change under a pinned fetch, when the
+    // wallpaper is rethemed. `cfg` still decides everything about geometry;
+    // this copy carries only the colours, and is re-resolved when the palette
+    // file is rewritten.
+    let mut theme = cfg.clone();
+    let mut palette = palette::Watch::new(cfg);
+
     let (mut cols, mut rows) = term::size();
     let mut layout = Layout::pinned(fetch, cols, rows);
     let mut split = Split::fit(&layout, cfg, rows);
@@ -177,7 +184,7 @@ fn animate(
             }
 
             if let Some(split) = &split {
-                let lines = render::compose(&layout.scene(phase), cfg);
+                let lines = render::compose(&layout.scene(phase), &theme);
                 // A failed write means the terminal is gone; that is our cue to
                 // stop, not an error worth reporting to nobody.
                 if pane.paint(&mut stdout, &lines, split.pane_h).is_err() {
@@ -190,6 +197,14 @@ fn animate(
 
         if Instant::now() >= next_resize_check {
             next_resize_check = Instant::now() + RESIZE_POLL;
+
+            // Rethemed since the last check: take the new colours and repaint,
+            // rather than showing the palette from whenever this was started.
+            if palette.changed() {
+                crate::palette::apply(&mut theme);
+                pane.invalidate();
+            }
+
             let (w, h) = term::size();
             if (w, h) != (cols, rows) {
                 (cols, rows) = (w, h);

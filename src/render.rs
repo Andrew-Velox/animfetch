@@ -11,6 +11,7 @@
 
 // Both traits provide `write!`; the anonymous import keeps `Write` unambiguous
 // while still allowing formatting into a String.
+use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::io::{self, Write};
 
@@ -110,7 +111,9 @@ pub fn compose(scene: &Scene<'_>, cfg: &Config) -> Vec<String> {
     let mut out = Vec::with_capacity(height + 2);
 
     for y in 0..height {
-        let mut line = String::new();
+        // Sized for the visible columns plus the handful of SGR sequences a row
+        // carries, so a line is built without reallocating as it grows.
+        let mut line = String::with_capacity(avail_w + 64);
 
         let art_row = y.checked_sub(art_top).and_then(|i| art.get(i));
         if let Some(row) = art_row {
@@ -216,12 +219,16 @@ fn paint_info_row(out: &mut String, row: &Row<'_>, cfg: &Config, width: usize) {
 }
 
 /// Cut `s` to `width` display columns, marking the cut with an ellipsis.
-fn truncate(s: &str, width: usize) -> String {
+///
+/// Borrows when nothing has to be cut, which is the usual case and is reached
+/// twice per info row on every frame — an allocation each, for a string that
+/// would have been copied out unchanged.
+fn truncate(s: &str, width: usize) -> Cow<'_, str> {
     if s.width() <= width {
-        return s.to_string();
+        return Cow::Borrowed(s);
     }
     if width <= 1 {
-        return "…".repeat(width);
+        return Cow::Owned("…".repeat(width));
     }
 
     let mut out = String::new();
@@ -235,7 +242,7 @@ fn truncate(s: &str, width: usize) -> String {
         used += w;
     }
     out.push('…');
-    out
+    Cow::Owned(out)
 }
 
 /// Incremental painter for the pinned fetch pane.

@@ -32,6 +32,14 @@ pub fn title() -> String {
 pub fn collect(modules: &[Module]) -> Vec<Item> {
     let mut items = Vec::with_capacity(modules.len());
 
+    // Memory and Swap are two views of one file, and the default config asks
+    // for both. Read it once, and only if something actually wants it.
+    let meminfo = modules
+        .iter()
+        .any(|m| matches!(m, Module::Memory | Module::Swap))
+        .then(|| fs::read_to_string("/proc/meminfo").ok())
+        .flatten();
+
     for &module in modules {
         let (label, value) = match module {
             Module::Os => ("OS", os()),
@@ -43,8 +51,8 @@ pub fn collect(modules: &[Module]) -> Vec<Item> {
             Module::Wm => ("WM", wm()),
             Module::Terminal => ("Terminal", terminal()),
             Module::Cpu => ("CPU", cpu()),
-            Module::Memory => ("Memory", memory()),
-            Module::Swap => ("Swap", swap()),
+            Module::Memory => ("Memory", meminfo.as_deref().and_then(memory)),
+            Module::Swap => ("Swap", meminfo.as_deref().and_then(swap)),
             Module::Disk => ("Disk", disk("/")),
             Module::Colors => ("", Some(swatches())),
         };
@@ -95,7 +103,7 @@ fn uptime() -> Option<String> {
 fn packages() -> Option<String> {
     // Arch: one directory per installed package.
     if let Ok(entries) = fs::read_dir("/var/lib/pacman/local") {
-        let n = entries.filter_map(Result::ok).filter(|e| e.path().is_dir()).count();
+        let n = entries.filter_map(Result::ok).filter(is_dir).count();
         if n > 0 {
             return Some(format!("{n} (pacman)"));
         }
@@ -161,14 +169,23 @@ fn terminal() -> Option<String> {
 }
 
 fn cpu() -> Option<String> {
-    let info = fs::read_to_string("/proc/cpuinfo").ok()?;
-
-    let model = info
-        .lines()
-        .find_map(|l| l.strip_prefix("model name").and_then(|r| r.split_once(':')))
-        .map(|(_, v)| v.trim().to_string())?;
-
-    let cores = info.lines().filter(|l| l.starts_with("processor")).count();
+    // /proc/cpuinfo repeats a whole block per core, so on a many-core machine
+    // it is tens of kilobytes that the kernel formats field by field as we read
+    // it — by some distance the most expensive file this module touches. The
+    // model name is in the first block, and the core count is a dozen bytes
+    // elsewhere, so neither actually needs the rest of it.
+    let head = online_cpus().zip(read_prefix("/proc/cpuinfo", 4096));
+    let (model, cores) = match head {
+        Some((cores, head)) => match model_name(&head) {
+            Some(model) => (model, cores),
+            // A kernel whose first block runs past the prefix. Reading the
+            // whole file is what this was avoiding, but dropping the row over
+            // it would be trading a real feature for the saving.
+            None => whole_cpuinfo()?,
+        },
+        // Nothing to count online CPUs from, so the file is needed anyway.
+        None => whole_cpuinfo()?,
+    };
 
     // Nominal max clock, in kHz. Absent on VMs and some ARM boards.
     let ghz = read_trimmed("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
@@ -179,23 +196,35 @@ fn cpu() -> Option<String> {
     Some(format!("{model} ({cores}){ghz}"))
 }
 
-fn memory() -> Option<String> {
-    let info = fs::read_to_string("/proc/meminfo").ok()?;
-    let total = meminfo_field(&info, "MemTotal")?;
+/// Model name and core count read the original way: the whole file, counting
+/// its `processor` lines.
+fn whole_cpuinfo() -> Option<(String, usize)> {
+    let all = fs::read_to_string("/proc/cpuinfo").ok()?;
+    let cores = all.lines().filter(|l| l.starts_with("processor")).count();
+    Some((model_name(&all)?, cores))
+}
+
+fn model_name(text: &str) -> Option<String> {
+    text.lines()
+        .find_map(|l| l.strip_prefix("model name").and_then(|r| r.split_once(':')))
+        .map(|(_, v)| v.trim().to_string())
+}
+
+fn memory(info: &str) -> Option<String> {
+    let total = meminfo_field(info, "MemTotal")?;
 
     // MemAvailable accounts for reclaimable cache; MemFree alone badly
     // overstates usage on any machine that has been up for a while.
-    let available = meminfo_field(&info, "MemAvailable")?;
+    let available = meminfo_field(info, "MemAvailable")?;
     Some(format_usage(total - available, total))
 }
 
-fn swap() -> Option<String> {
-    let info = fs::read_to_string("/proc/meminfo").ok()?;
-    let total = meminfo_field(&info, "SwapTotal")?;
+fn swap(info: &str) -> Option<String> {
+    let total = meminfo_field(info, "SwapTotal")?;
     if total == 0 {
         return None; // No swap configured; a row reading "0B / 0B" is noise.
     }
-    let free = meminfo_field(&info, "SwapFree")?;
+    let free = meminfo_field(info, "SwapFree")?;
     Some(format_usage(total - free, total))
 }
 
@@ -291,6 +320,58 @@ fn is_meaningful(value: &str) -> bool {
         && !value.eq_ignore_ascii_case("None")
 }
 
+/// Is this directory entry a directory, following symlinks as `is_dir` does?
+///
+/// The kind comes back with the directory listing itself, so the common case
+/// costs nothing. Going through `entry.path().is_dir()` instead would stat
+/// every entry — over a thousand syscalls on an ordinary Arch install, which
+/// alone took longer than everything else this module does put together.
+fn is_dir(entry: &fs::DirEntry) -> bool {
+    match entry.file_type() {
+        // A symlink's own type says nothing about its target; this is the one
+        // case that still has to ask the filesystem.
+        Ok(kind) if kind.is_symlink() => entry.path().is_dir(),
+        Ok(kind) => kind.is_dir(),
+        Err(_) => false,
+    }
+}
+
+/// How many CPUs are online, from the one-line summary the kernel keeps for
+/// exactly this.
+///
+/// Deliberately `online` rather than `present`: counting `processor` lines in
+/// cpuinfo, which this replaces, counts the online ones, and a machine with a
+/// core parked should not start reporting a different number.
+fn online_cpus() -> Option<usize> {
+    count_cpu_list(&read_trimmed("/sys/devices/system/cpu/online")?)
+}
+
+/// Size of a kernel CPU list: comma-separated `n` or `n-m` ranges, inclusive.
+fn count_cpu_list(text: &str) -> Option<usize> {
+    let mut total = 0usize;
+    for range in text.split(',') {
+        let (first, last) = range.split_once('-').unwrap_or((range, range));
+        let first: usize = first.trim().parse().ok()?;
+        let last: usize = last.trim().parse().ok()?;
+        total += last.checked_sub(first)? + 1;
+    }
+    (total > 0).then_some(total)
+}
+
+/// Read at most `limit` bytes of `path`.
+///
+/// For an ordinary file this is just a short read. For the generated files
+/// under `/proc` it also stops the kernel formatting the rest, which is where
+/// the saving is. Invalid UTF-8 — including a character the limit cut in half —
+/// is replaced rather than rejected, since the caller is matching on ASCII.
+fn read_prefix(path: &str, limit: u64) -> Option<String> {
+    use std::io::Read as _;
+
+    let mut buf = Vec::with_capacity(limit as usize);
+    fs::File::open(path).ok()?.take(limit).read_to_end(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
 fn read_trimmed(path: impl AsRef<Path>) -> Option<String> {
     fs::read_to_string(path)
         .ok()
@@ -361,6 +442,47 @@ mod tests {
         assert_eq!(os_release_field(text, "PRETTY_NAME").as_deref(), Some("Arch Linux"));
         assert_eq!(os_release_field(text, "ID").as_deref(), Some("arch"));
         assert_eq!(os_release_field(text, "MISSING"), None);
+    }
+
+    #[test]
+    fn cpu_lists_count_every_form_the_kernel_writes() {
+        assert_eq!(count_cpu_list("0"), Some(1));
+        assert_eq!(count_cpu_list("0-31"), Some(32));
+        // A machine with cores offlined reports several ranges.
+        assert_eq!(count_cpu_list("0-3,8-11"), Some(8));
+        assert_eq!(count_cpu_list("0,2,4"), Some(3));
+        // Nothing usable must fall back rather than report a wrong count.
+        assert_eq!(count_cpu_list(""), None);
+        assert_eq!(count_cpu_list("garbage"), None);
+        assert_eq!(count_cpu_list("4-0"), None);
+    }
+
+    #[test]
+    fn only_the_first_block_of_cpuinfo_is_read_and_it_holds_the_model() {
+        // The saving in `cpu` rests on this: the kernel formats a full block
+        // per core, and the model name is in the first one.
+        let Some(head) = read_prefix("/proc/cpuinfo", 4096) else {
+            return; // no /proc here
+        };
+        assert!(head.len() <= 4096);
+
+        let full = fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
+        if let Some(expected) = model_name(&full) {
+            assert_eq!(model_name(&head), Some(expected));
+        }
+    }
+
+    #[test]
+    fn the_core_count_agrees_with_what_cpuinfo_lists() {
+        // `cpu` gets this from /sys now; it must still be the number of
+        // `processor` lines it used to count.
+        let Some(online) = online_cpus() else { return };
+        let Ok(info) = fs::read_to_string("/proc/cpuinfo") else { return };
+
+        let listed = info.lines().filter(|l| l.starts_with("processor")).count();
+        if listed > 0 {
+            assert_eq!(online, listed);
+        }
     }
 
     #[test]

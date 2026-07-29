@@ -5,8 +5,6 @@
 //! compares them between frames. Keeping colour *in* the string means the diff
 //! catches colour changes for free.
 
-use std::fmt::Write as _;
-
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,15 +12,37 @@ pub struct Rgb(pub u8, pub u8, pub u8);
 
 impl Rgb {
     /// SGR foreground sequence, e.g. `\x1b[38;2;255;0;0m`.
+    ///
+    /// Assembled by hand rather than with `write!`. Every art row and every
+    /// info row starts with one of these, so a frame emits a few dozen — enough
+    /// that the formatting machinery `write!` drags in is the largest single
+    /// cost of composing one.
     pub fn fg(self, out: &mut String) {
         let Rgb(r, g, b) = self;
-        let _ = write!(out, "\x1b[38;2;{r};{g};{b}m");
+        out.push_str("\x1b[38;2;");
+        push_dec(out, r);
+        out.push(';');
+        push_dec(out, g);
+        out.push(';');
+        push_dec(out, b);
+        out.push('m');
     }
 
     fn lerp(self, other: Self, t: f32) -> Self {
         let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
         Rgb(mix(self.0, other.0), mix(self.1, other.1), mix(self.2, other.2))
     }
+}
+
+/// Append a byte in decimal, shortest form — exactly what `{}` would produce.
+fn push_dec(out: &mut String, n: u8) {
+    if n >= 100 {
+        out.push((b'0' + n / 100) as char);
+    }
+    if n >= 10 {
+        out.push((b'0' + n / 10 % 10) as char);
+    }
+    out.push((b'0' + n % 10) as char);
 }
 
 pub const RESET: &str = "\x1b[0m";
@@ -101,6 +121,18 @@ impl<'de> Deserialize<'de> for Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fg_emits_exactly_what_formatting_would() {
+        // `fg` builds the sequence by hand for speed; this is what keeps it
+        // honest about producing the same bytes.
+        for rgb in [Rgb(0, 0, 0), Rgb(255, 255, 255), Rgb(1, 10, 100), Rgb(9, 99, 199)] {
+            let mut out = String::new();
+            rgb.fg(&mut out);
+            let Rgb(r, g, b) = rgb;
+            assert_eq!(out, format!("\x1b[38;2;{r};{g};{b}m"));
+        }
+    }
 
     #[test]
     fn parses_both_hex_forms() {

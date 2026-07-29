@@ -139,6 +139,33 @@ Copy `config.example.toml` to `~/.config/animfetch/config.toml`. Every key is
 optional, and a malformed file falls back to defaults rather than refusing to
 start.
 
+### Colours from your desktop theme
+
+Instead of fixed colours, animfetch can read whatever file themes the rest of
+your desktop — matugen, pywal, wallust — so the fetch follows your wallpaper.
+
+```sh
+animfetch --once --palette      # try it without editing anything
+```
+
+To make it permanent:
+
+```toml
+color_source = "palette"
+```
+
+It looks for a matugen, pywal or wallust palette in that order, and reads the
+`primary`, `secondary`, `tertiary` and `on_surface` roles by default. Any role
+the file does not define keeps the fixed colour from your config, so this can
+only add colour, never take it away — and a missing palette file changes
+nothing at all.
+
+Under `--pin` the file is re-read when it changes, so retheming your desktop
+recolours the running animation without restarting it.
+
+See `palette_files`, `palette_accent`, `palette_value` and `palette_gradient`
+in `config.example.toml` to point it somewhere else or pick different roles.
+
 ## A note on the prompt
 
 Interactive mode draws something that looks like a shell prompt, collects what
