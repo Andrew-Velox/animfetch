@@ -5,7 +5,7 @@ of the screen and keeps animating while your prompt and command output scroll
 below it.
 
 <video
-  src="https://github.com/Andrew-Velox/animfetch/raw/main/.github/assets/animfetch-video.mp4"
+  src=".github/assets/animfetch-video.mp4"
   controls muted loop playsinline width="900">
 </video>
 
