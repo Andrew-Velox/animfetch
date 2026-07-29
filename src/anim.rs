@@ -105,43 +105,27 @@ impl Frame {
             return Vec::new();
         }
 
+        // Every blank cell reachable from the border is background. Seed the
+        // frontier with the border itself, then flood inward.
+        let border = (0..width)
+            .flat_map(|x| [x, (height - 1) * width + x])
+            .chain((0..height).flat_map(|y| [y * width, y * width + width - 1]));
+
         let mut outside = vec![false; width * height];
-        let mut queue: Vec<(usize, usize)> = Vec::new();
-
-        let mut seed = |x: usize, y: usize, queue: &mut Vec<(usize, usize)>| {
-            if !ink[y * width + x] && !outside[y * width + x] {
-                outside[y * width + x] = true;
-                queue.push((x, y));
+        let mut queue: Vec<usize> = Vec::new();
+        for i in border {
+            if !ink[i] && !outside[i] {
+                outside[i] = true;
+                queue.push(i);
             }
-        };
-        for x in 0..width {
-            seed(x, 0, &mut queue);
-            seed(x, height - 1, &mut queue);
-        }
-        for y in 0..height {
-            seed(0, y, &mut queue);
-            seed(width - 1, y, &mut queue);
         }
 
-        while let Some((x, y)) = queue.pop() {
-            let mut visit = |nx: usize, ny: usize, queue: &mut Vec<(usize, usize)>| {
-                let i = ny * width + nx;
-                if !ink[i] && !outside[i] {
-                    outside[i] = true;
-                    queue.push((nx, ny));
+        while let Some(i) = queue.pop() {
+            for n in neighbors(i, width, height) {
+                if !ink[n] && !outside[n] {
+                    outside[n] = true;
+                    queue.push(n);
                 }
-            };
-            if x > 0 {
-                visit(x - 1, y, &mut queue);
-            }
-            if x + 1 < width {
-                visit(x + 1, y, &mut queue);
-            }
-            if y > 0 {
-                visit(x, y - 1, &mut queue);
-            }
-            if y + 1 < height {
-                visit(x, y + 1, &mut queue);
             }
         }
 
@@ -174,26 +158,11 @@ impl Frame {
 
             while let Some(i) = stack.pop() {
                 component.push(i);
-                let (x, y) = (i % width, i / width);
-
-                let mut visit = |nx: usize, ny: usize, stack: &mut Vec<usize>| {
-                    let n = ny * width + nx;
+                for n in neighbors(i, width, height) {
                     if hole[n] && !seen[n] {
                         seen[n] = true;
                         stack.push(n);
                     }
-                };
-                if x > 0 {
-                    visit(x - 1, y, &mut stack);
-                }
-                if x + 1 < width {
-                    visit(x + 1, y, &mut stack);
-                }
-                if y > 0 {
-                    visit(x, y - 1, &mut stack);
-                }
-                if y + 1 < height {
-                    visit(x, y + 1, &mut stack);
                 }
             }
 
@@ -308,6 +277,25 @@ pub enum Ink<'a> {
 const QUADRANTS: [char; 16] = [
     ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟', '▘', '▚', '▌', '▙', '▀', '▜', '▛', '█',
 ];
+
+/// The orthogonal neighbours of cell `i`, clipped at the grid edges.
+///
+/// Both flood fills below walk the grid this way; four-connectivity is what
+/// makes a diagonal touch *not* count as an opening, so a hole bounded only
+/// diagonally stays a hole.
+fn neighbors(i: usize, width: usize, height: usize) -> impl Iterator<Item = usize> {
+    let (x, y) = (i % width, i / width);
+    // The two backward steps are lazy because they underflow at the edge they
+    // are guarded against; the forward ones cannot and so are eager.
+    [
+        (x > 0).then(|| i - 1),
+        (x + 1 < width).then_some(i + 1),
+        (y > 0).then(|| i - width),
+        (y + 1 < height).then_some(i + width),
+    ]
+    .into_iter()
+    .flatten()
+}
 
 /// Half-open source range covering output index `i`, guaranteed non-empty.
 fn span(i: usize, out_len: usize, src_len: usize) -> (usize, usize) {
@@ -662,20 +650,11 @@ mod tests {
             seen[start] = true;
 
             while let Some(i) = stack.pop() {
-                let (x, y) = (i % frame.width, i / frame.width);
-                component.push((x, y));
-                for (nx, ny) in [
-                    (x.wrapping_sub(1), y),
-                    (x + 1, y),
-                    (x, y.wrapping_sub(1)),
-                    (x, y + 1),
-                ] {
-                    if nx < frame.width && ny < frame.height {
-                        let n = ny * frame.width + nx;
-                        if frame.hole[n] && !seen[n] {
-                            seen[n] = true;
-                            stack.push(n);
-                        }
+                component.push((i % frame.width, i / frame.width));
+                for n in neighbors(i, frame.width, frame.height) {
+                    if frame.hole[n] && !seen[n] {
+                        seen[n] = true;
+                        stack.push(n);
                     }
                 }
             }

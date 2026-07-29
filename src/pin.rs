@@ -20,16 +20,14 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::config::Config;
-use crate::fetch::Item;
-use crate::render::{Pane, Scene};
-use crate::{Layout, Split, anim::Animation, render, term};
+use crate::render::Pane;
+use crate::{Fetch, Layout, Split, render, term};
 
 /// How often to re-check the terminal size while pinned.
 const RESIZE_POLL: Duration = Duration::from_millis(500);
 
 /// Set up the screen, then detach and animate until the terminal goes away.
-pub fn start(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -> io::Result<()> {
+pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
     if live_owner()?.is_some() {
         // Another instance already owns this terminal — a nested shell, most
         // likely. Two of them would paint different frames into the same rows.
@@ -41,11 +39,9 @@ pub fn start(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -
     }
 
     let (cols, rows) = term::size();
-    let budget = cfg.height(Split::budget(rows));
-    let layout = Layout::build(animation, cfg, title, items, cols as usize, budget);
-    let lines = compose(&layout, cfg, title, items, 0, cols);
+    let layout = Layout::pinned(fetch, cols, rows);
 
-    let Some(split) = Split::new(lines.len(), rows) else {
+    let Some(split) = Split::fit(&layout, fetch.cfg, rows) else {
         return Err(io::Error::other("terminal too short to pin a fetch"));
     };
 
@@ -97,7 +93,7 @@ pub fn start(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -
     unsafe { libc::setpgid(0, 0) };
 
     write_pid_file()?;
-    let result = animate(animation, cfg, title, items, shell_pgid, shell_pid);
+    let result = animate(fetch, shell_pgid, shell_pid);
     let _ = std::fs::remove_file(pid_path()?);
 
     // The terminal is usually already gone by here; resetting is best effort.
@@ -135,20 +131,17 @@ pub fn stop() -> io::Result<bool> {
 }
 
 fn animate(
-    animation: &Animation,
-    cfg: &Config,
-    title: &str,
-    items: &[Item],
+    fetch: &Fetch<'_>,
     shell_pgid: libc::pid_t,
     shell_pid: libc::pid_t,
 ) -> io::Result<()> {
+    let cfg = fetch.cfg;
     let mut stdout = io::stdout();
     let mut pane = Pane::new().with_origin_mode();
 
     let (mut cols, mut rows) = term::size();
-    let mut budget = cfg.height(Split::budget(rows));
-    let mut layout = Layout::build(animation, cfg, title, items, cols as usize, budget);
-    let mut split = Split::new(compose(&layout, cfg, title, items, 0, cols).len(), rows);
+    let mut layout = Layout::pinned(fetch, cols, rows);
+    let mut split = Split::fit(&layout, cfg, rows);
 
     let interval = cfg.frame_interval();
     let mut phase = 0usize;
@@ -178,20 +171,13 @@ fn animate(
             if !had_terminal {
                 // A full-screen program may have reset the scroll region on its
                 // way out. Re-assert it, and repaint what it drew over.
-                //
-                // Setting the region homes the cursor, so bracket it — the
-                // shell's cursor must come back exactly where it was.
-                write!(
-                    stdout,
-                    "\x1b7{}{}\x1b8",
-                    term::scroll_region(split.as_ref().map_or(1, |s| s.scroll_top), rows),
-                    term::SET_ORIGIN_MODE
-                )?;
+                let top = split.as_ref().map_or(1, |s| s.scroll_top);
+                reassert_region(&mut stdout, top, rows)?;
                 pane.invalidate();
             }
 
             if let Some(split) = &split {
-                let lines = compose(&layout, cfg, title, items, phase, cols);
+                let lines = render::compose(&layout.scene(phase), cfg);
                 // A failed write means the terminal is gone; that is our cue to
                 // stop, not an error worth reporting to nobody.
                 if pane.paint(&mut stdout, &lines, split.pane_h).is_err() {
@@ -207,17 +193,11 @@ fn animate(
             let (w, h) = term::size();
             if (w, h) != (cols, rows) {
                 (cols, rows) = (w, h);
-                budget = cfg.height(Split::budget(rows));
-                layout = Layout::build(animation, cfg, title, items, cols as usize, budget);
-                split = Split::new(compose(&layout, cfg, title, items, 0, cols).len(), rows);
+                layout = Layout::pinned(fetch, cols, rows);
+                split = Split::fit(&layout, cfg, rows);
 
                 if let Some(s) = &split {
-                    write!(
-                        stdout,
-                        "\x1b7{}{}\x1b8",
-                        term::scroll_region(s.scroll_top, rows),
-                        term::SET_ORIGIN_MODE
-                    )?;
+                    reassert_region(&mut stdout, s.scroll_top, rows)?;
                 }
                 pane.invalidate();
             }
@@ -227,25 +207,12 @@ fn animate(
     }
 }
 
-fn compose(
-    layout: &Layout,
-    cfg: &Config,
-    title: &str,
-    items: &[Item],
-    phase: usize,
-    cols: u16,
-) -> Vec<String> {
-    render::compose(
-        &Scene {
-            art: &layout.frames[phase % layout.frames.len()],
-            art_w: layout.art_w,
-            title,
-            items,
-            phase,
-            width: cols as usize,
-        },
-        cfg,
-    )
+/// Re-establish the scroll region without disturbing the cursor.
+///
+/// Setting a region homes the cursor as a side effect, so it is bracketed with
+/// save/restore — the shell's cursor must come back exactly where it was.
+fn reassert_region(out: &mut impl Write, top: u16, rows: u16) -> io::Result<()> {
+    write!(out, "\x1b7{}{}\x1b8", term::scroll_region(top, rows), term::SET_ORIGIN_MODE)
 }
 
 /// The process group currently holding the terminal, or -1 if we have none.

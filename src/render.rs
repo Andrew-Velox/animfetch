@@ -14,7 +14,7 @@
 use std::fmt::Write as _;
 use std::io::{self, Write};
 
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::color::{RESET, Rgb};
 use crate::config::Config;
@@ -37,10 +37,15 @@ pub fn visible_width(s: &str) -> usize {
                 }
             }
         } else {
-            width += UnicodeWidthStr::width(c.to_string().as_str());
+            width += char_width(c);
         }
     }
     width
+}
+
+/// Display width of one character. Control characters count as zero.
+fn char_width(c: char) -> usize {
+    UnicodeWidthChar::width(c).unwrap_or(0)
 }
 
 fn fg(out: &mut String, cfg: &Config, color: Rgb) {
@@ -222,7 +227,7 @@ fn truncate(s: &str, width: usize) -> String {
     let mut out = String::new();
     let mut used = 0;
     for c in s.chars() {
-        let w = UnicodeWidthStr::width(c.to_string().as_str());
+        let w = char_width(c);
         if used + w > width - 1 {
             break;
         }

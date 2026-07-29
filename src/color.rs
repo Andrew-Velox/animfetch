@@ -28,17 +28,21 @@ impl Rgb {
 pub const RESET: &str = "\x1b[0m";
 
 /// Parse `#rgb`, `#rrggbb`, or the same without the leading `#`.
+///
+/// Matched on bytes rather than sliced by index: `s` comes straight from the
+/// config file, and a multi-byte character can make a six-*byte* string that
+/// has no character boundary where a slice would need one.
 pub fn parse_hex(s: &str) -> Option<Rgb> {
-    let s = s.trim().trim_start_matches('#');
-    let byte = |i: usize| u8::from_str_radix(&s[i..i + 2], 16).ok();
+    let nibble = |b: &u8| (*b as char).to_digit(16).map(|d| d as u8);
 
-    match s.len() {
-        6 => Some(Rgb(byte(0)?, byte(2)?, byte(4)?)),
-        3 => {
-            // #abc expands to #aabbcc.
-            let nib = |i: usize| u8::from_str_radix(&s[i..i + 1], 16).ok().map(|v| v * 17);
-            Some(Rgb(nib(0)?, nib(1)?, nib(2)?))
-        }
+    match s.trim().trim_start_matches('#').as_bytes() {
+        // #abc expands to #aabbcc.
+        [r, g, b] => Some(Rgb(nibble(r)? * 17, nibble(g)? * 17, nibble(b)? * 17)),
+        [r1, r0, g1, g0, b1, b0] => Some(Rgb(
+            nibble(r1)? << 4 | nibble(r0)?,
+            nibble(g1)? << 4 | nibble(g0)?,
+            nibble(b1)? << 4 | nibble(b0)?,
+        )),
         _ => None,
     }
 }
@@ -105,6 +109,16 @@ mod tests {
         assert_eq!(parse_hex("#f80"), Some(Rgb(255, 136, 0)));
         assert_eq!(parse_hex("#xyzxyz"), None);
         assert_eq!(parse_hex("#ff80"), None);
+    }
+
+    #[test]
+    fn non_ascii_is_rejected_rather_than_slicing_mid_character() {
+        // "€" is three bytes, so this is six bytes long but has no boundary at
+        // byte 2. Indexing there would panic on a value from someone's config.
+        assert_eq!(parse_hex("€xxx"), None);
+        assert_eq!(parse_hex("#€é"), None);
+        // from_str_radix used to accept a sign; a nibble must be a bare digit.
+        assert_eq!(parse_hex("+f+f+f"), None);
     }
 
     #[test]

@@ -89,9 +89,10 @@ fn run() -> io::Result<ExitCode> {
 
     let title = fetch::title();
     let items = fetch::collect(&cfg.modules);
+    let fetch = Fetch { animation: &animation, cfg: &cfg, title: &title, items: &items };
 
     if !interactive || args.once {
-        return draw_once(&animation, &cfg, &title, &items).map(|()| ExitCode::SUCCESS);
+        return draw_once(&fetch).map(|()| ExitCode::SUCCESS);
     }
 
     if args.unpin {
@@ -102,14 +103,14 @@ fn run() -> io::Result<ExitCode> {
     }
 
     if args.pin {
-        return pin::start(&animation, &cfg, &title, &items).map(|()| ExitCode::SUCCESS);
+        return pin::start(&fetch).map(|()| ExitCode::SUCCESS);
     }
 
     if args.play {
-        return play(&animation, &cfg, &title, &items).map(|()| ExitCode::SUCCESS);
+        return play(&fetch).map(|()| ExitCode::SUCCESS);
     }
 
-    let status = shell_loop(&animation, &cfg, &title, &items)?;
+    let status = shell_loop(&fetch)?;
 
     // Warnings are held back until the terminal is readable again; printing one
     // earlier would have been wiped by the first frame.
@@ -183,13 +184,32 @@ fn set_animation(dir: &std::path::Path, name: &str) -> io::Result<std::path::Pat
 /// Erase from the cursor to the end of the line.
 const CLEAR_LINE: &str = "\x1b[K";
 
-/// Pre-scaled frames for one terminal size.
-pub struct Layout {
-    pub frames: Vec<Vec<String>>,
-    pub art_w: usize,
+/// Everything the drawing code needs that is fixed for the whole run.
+///
+/// These four travel together through every mode, so they are passed as one
+/// value rather than as a parameter list each call site has to keep in order.
+#[derive(Clone, Copy)]
+pub struct Fetch<'a> {
+    pub animation: &'a Animation,
+    pub cfg: &'a Config,
+    pub title: &'a str,
+    pub items: &'a [Item],
 }
 
-impl Layout {
+/// Pre-scaled frames for one terminal size, with the content they sit beside.
+///
+/// Rebuilt on every resize, which is exactly when the scaled art, the pane
+/// width, and therefore every [`render::Scene`] built from them go stale.
+pub struct Layout<'a> {
+    frames: Vec<Vec<String>>,
+    art_w: usize,
+    title: &'a str,
+    items: &'a [Item],
+    /// Terminal width this layout was scaled for.
+    width: usize,
+}
+
+impl<'a> Layout<'a> {
     /// Below this many columns there is no width worth splitting, so the art is
     /// dropped and the info pane gets the whole terminal.
     const MIN_SPLIT_WIDTH: usize = 40;
@@ -202,39 +222,65 @@ impl Layout {
     ///
     /// `max_h` is the caller's row budget for the whole pane, not the terminal
     /// height — the interactive session keeps most of the screen for output.
-    pub fn build(animation: &Animation, cfg: &Config, title: &str, items: &[Item], w: usize, max_h: usize) -> Self {
-        if w < Self::MIN_SPLIT_WIDTH {
-            // One empty frame rather than none, so the loop's `phase % len`
-            // indexing stays valid without a special case.
-            return Self { frames: vec![Vec::new()], art_w: 0 };
-        }
+    fn build(fetch: &Fetch<'a>, cols: u16, max_h: usize) -> Self {
+        let &Fetch { animation, cfg, title, items } = fetch;
+        let w = cols as usize;
 
-        let widest = items
-            .iter()
-            .map(|i| {
-                if i.label.is_empty() {
-                    render::visible_width(&i.value)
-                } else {
-                    render::visible_width(i.label) + 2 + render::visible_width(&i.value)
-                }
-            })
-            .chain(std::iter::once(render::visible_width(title)))
-            .max()
-            .unwrap_or(0);
+        let (frames, art_w) = if w < Self::MIN_SPLIT_WIDTH {
+            // One empty frame rather than none, so `phase % len` indexing stays
+            // valid without a special case.
+            (vec![Vec::new()], 0)
+        } else {
+            let widest = items
+                .iter()
+                .map(|i| {
+                    if i.label.is_empty() {
+                        render::visible_width(&i.value)
+                    } else {
+                        render::visible_width(i.label) + 2 + render::visible_width(&i.value)
+                    }
+                })
+                .chain(std::iter::once(render::visible_width(title)))
+                .max()
+                .unwrap_or(0);
 
-        // A single long value — a CPU model is usually the culprit — would
-        // otherwise squeeze the art down to an unrecognisable blob. Cap what
-        // the info pane can claim and let `compose` ellipsise the overflow.
-        let info_w = widest.min(w * Self::INFO_WIDTH_SHARE / 100);
+            // A single long value — a CPU model is usually the culprit — would
+            // otherwise squeeze the art down to an unrecognisable blob. Cap what
+            // the info pane can claim and let `compose` ellipsise the overflow.
+            let info_w = widest.min(w * Self::INFO_WIDTH_SHARE / 100);
 
-        let max_w = cfg.width(w.saturating_sub(info_w + cfg.gap).max(8));
-        let (art_w, art_h) = animation.fit(max_w, max_h.max(4));
-        let ramp = cfg.ramp();
-        let ink = cfg.ink(&ramp);
+            let max_w = cfg.width(w.saturating_sub(info_w + cfg.gap).max(8));
+            let (art_w, art_h) = animation.fit(max_w, max_h.max(4));
+            let ramp = cfg.ramp();
+            let ink = cfg.ink(&ramp);
 
-        Self {
-            frames: animation.frames.iter().map(|f| f.scale(art_w, art_h, ink)).collect(),
-            art_w,
+            let frames = animation.frames.iter().map(|f| f.scale(art_w, art_h, ink)).collect();
+            (frames, art_w)
+        };
+
+        Self { frames, art_w, title, items, width: w }
+    }
+
+    /// Layout for the pinned pane on a terminal of this size.
+    pub fn pinned(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
+        Self::build(fetch, cols, fetch.cfg.height(Split::budget(rows)))
+    }
+
+    /// Layout for a one-off drawing that owns the whole terminal but for the
+    /// row the shell prompt will land on.
+    pub fn full_screen(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
+        Self::build(fetch, cols, fetch.cfg.height(rows.saturating_sub(1) as usize))
+    }
+
+    /// What to draw for frame `phase`.
+    pub fn scene(&self, phase: usize) -> render::Scene<'_> {
+        render::Scene {
+            art: &self.frames[phase % self.frames.len()],
+            art_w: self.art_w,
+            title: self.title,
+            items: self.items,
+            phase,
+            width: self.width,
         }
     }
 }
@@ -257,7 +303,7 @@ impl Split {
     const PANE_HEIGHT_SHARE: usize = 55;
 
     /// Row budget for the pane on a terminal of `rows` rows.
-    pub fn budget(rows: u16) -> usize {
+    fn budget(rows: u16) -> usize {
         let rows = rows as usize;
         (rows * Self::PANE_HEIGHT_SHARE / 100)
             .min(rows.saturating_sub(Self::MIN_SCROLL_ROWS + 1))
@@ -266,10 +312,15 @@ impl Split {
 
     /// `None` on a terminal too short to usefully divide, in which case the
     /// fetch is skipped and the whole screen behaves as a plain prompt.
-    pub fn new(pane_lines: usize, rows: u16) -> Option<Self> {
+    fn new(pane_lines: usize, rows: u16) -> Option<Self> {
         let max_pane = (rows as usize).checked_sub(Self::MIN_SCROLL_ROWS + 1)?;
         let pane_h = pane_lines.min(max_pane);
         (pane_h > 0).then(|| Self { pane_h, scroll_top: pane_h as u16 + 2 })
+    }
+
+    /// The split for `layout`, whose composed height is what the pane needs.
+    pub fn fit(layout: &Layout<'_>, cfg: &Config, rows: u16) -> Option<Self> {
+        Self::new(render::compose(&layout.scene(0), cfg).len(), rows)
     }
 }
 
@@ -282,22 +333,17 @@ impl Split {
 /// We only repaint the pane to advance the animation.
 ///
 /// Returns the exit status of the last command run.
-fn shell_loop(
-    animation: &Animation,
-    cfg: &Config,
-    title: &str,
-    items: &[Item],
-) -> io::Result<u8> {
+fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
+    let cfg = fetch.cfg;
     let mut guard = term::Guard::acquire()?;
     let mut stdout = io::stdout();
 
     let mut prompt = Prompt::new(cfg);
     let mut pane = Pane::new();
 
-    let (mut cols, mut rows) = term::size();
-    let mut layout =
-        Layout::build(animation, cfg, title, items, cols as usize, cfg.height(Split::budget(rows)));
-    let mut split = enter_split(&mut stdout, &layout, cfg, title, items, cols, rows)?;
+    let (cols, mut rows) = term::size();
+    let mut layout = Layout::pinned(fetch, cols, rows);
+    let mut split = enter_split(&mut stdout, &layout, cfg, rows)?;
 
     let interval = cfg.frame_interval();
     let mut next_frame = Instant::now() + interval;
@@ -311,15 +357,8 @@ fn shell_loop(
 
     'session: loop {
         if let Some(split) = &split {
-            let scene = render::Scene {
-                art: &layout.frames[phase % layout.frames.len()],
-                art_w: layout.art_w,
-                title,
-                items,
-                phase,
-                width: cols as usize,
-            };
-            pane.paint(&mut stdout, &render::compose(&scene, cfg), split.pane_h)?;
+            let lines = render::compose(&layout.scene(phase), cfg);
+            pane.paint(&mut stdout, &lines, split.pane_h)?;
         }
 
         if prompt_dirty {
@@ -366,10 +405,9 @@ fn shell_loop(
                     }
                 }
                 Event::Resize(w, h) => {
-                    (cols, rows) = (w, h);
-                    let budget = cfg.height(Split::budget(h));
-                    layout = Layout::build(animation, cfg, title, items, w as usize, budget);
-                    split = enter_split(&mut stdout, &layout, cfg, title, items, w, h)?;
+                    rows = h;
+                    layout = Layout::pinned(fetch, w, h);
+                    split = enter_split(&mut stdout, &layout, cfg, h)?;
                     pane.invalidate();
                     prompt_dirty = true;
                 }
@@ -445,22 +483,11 @@ fn execute(
 /// it. Also used on resize, where the geometry has to be rebuilt from scratch.
 fn enter_split(
     out: &mut impl Write,
-    layout: &Layout,
+    layout: &Layout<'_>,
     cfg: &Config,
-    title: &str,
-    items: &[Item],
-    cols: u16,
     rows: u16,
 ) -> io::Result<Option<Split>> {
-    let scene = render::Scene {
-        art: &layout.frames[0],
-        art_w: layout.art_w,
-        title,
-        items,
-        phase: 0,
-        width: cols as usize,
-    };
-    let split = Split::new(render::compose(&scene, cfg).len(), rows);
+    let split = Split::fit(layout, cfg, rows);
 
     write!(out, "{}", term::CLEAR_SCREEN)?;
     match &split {
@@ -490,21 +517,12 @@ fn enter_split(
 /// * It never clears the screen or positions absolutely. Space is reserved by
 ///   printing blank lines, exactly as any ordinary command's output would, so
 ///   scrollback above it survives.
-fn play(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -> io::Result<()> {
+fn play(fetch: &Fetch<'_>) -> io::Result<()> {
+    let cfg = fetch.cfg;
     let (cols, rows) = term::size();
-    let budget = cfg.height(rows.saturating_sub(1) as usize);
-    let layout = Layout::build(animation, cfg, title, items, cols as usize, budget);
+    let layout = Layout::full_screen(fetch, cols, rows);
 
-    let scene = |phase: usize| render::Scene {
-        art: &layout.frames[phase % layout.frames.len()],
-        art_w: layout.art_w,
-        title,
-        items,
-        phase,
-        width: cols as usize,
-    };
-
-    let height = render::compose(&scene(0), cfg).len();
+    let height = render::compose(&layout.scene(0), cfg).len();
     if height == 0 {
         return Ok(());
     }
@@ -515,7 +533,7 @@ fn play(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -> io:
     // lets save/restore-cursor stay valid for the whole animation.
     write!(stdout, "{}\x1b[{height}A{}", "\n".repeat(height), term::HIDE_CURSOR)?;
 
-    let result = animate_in_place(&mut stdout, cfg, scene, height);
+    let result = animate_in_place(&mut stdout, &layout, cfg, height);
 
     // Restore the cursor whatever happened, then step below the art so the
     // shell prompt lands after it rather than on top of it.
@@ -524,10 +542,10 @@ fn play(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -> io:
     result
 }
 
-fn animate_in_place<'a>(
+fn animate_in_place(
     out: &mut impl Write,
+    layout: &Layout<'_>,
     cfg: &Config,
-    scene: impl Fn(usize) -> render::Scene<'a>,
     height: usize,
 ) -> io::Result<()> {
     let interval = cfg.frame_interval();
@@ -536,7 +554,7 @@ fn animate_in_place<'a>(
     let mut phase = 0usize;
 
     while Instant::now() < deadline {
-        let lines = render::compose(&scene(phase), cfg);
+        let lines = render::compose(&layout.scene(phase), cfg);
 
         // One buffer, one write, cursor saved and restored around it — the same
         // discipline the interactive pane uses, for the same reason.
@@ -567,22 +585,10 @@ fn animate_in_place<'a>(
 /// Non-interactive output: one static frame, no raw mode, no clearing.
 ///
 /// This is what runs when stdout is a pipe, and what `--once` forces.
-fn draw_once(animation: &Animation, cfg: &Config, title: &str, items: &[Item]) -> io::Result<()> {
+fn draw_once(fetch: &Fetch<'_>) -> io::Result<()> {
     let (cols, rows) = term::size();
-    let budget = cfg.height(rows.saturating_sub(1) as usize);
-    let layout = Layout::build(animation, cfg, title, items, cols as usize, budget);
-
-    let lines = render::compose(
-        &render::Scene {
-            art: &layout.frames[0],
-            art_w: layout.art_w,
-            title,
-            items,
-            phase: 0,
-            width: cols as usize,
-        },
-        cfg,
-    );
+    let layout = Layout::full_screen(fetch, cols, rows);
+    let lines = render::compose(&layout.scene(0), fetch.cfg);
 
     let mut out = io::stdout().lock();
     for line in &lines {

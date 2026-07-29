@@ -14,7 +14,7 @@ use std::process::{Command, ExitStatus};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::color::RESET;
+use crate::color::{RESET, Rgb};
 use crate::config::Config;
 
 /// Cap on input length. Long enough for any real command, short enough that a
@@ -39,27 +39,23 @@ pub struct Prompt {
 
 impl Prompt {
     pub fn new(cfg: &Config) -> Self {
-        let mut prefix = String::new();
-        let paint = |out: &mut String, code: &str| {
-            if cfg.color {
-                out.push_str(code);
+        let paint = |color: Rgb, text: &str| {
+            if !cfg.color {
+                return text.to_string();
             }
+            let mut out = String::new();
+            color.fg(&mut out);
+            out.push_str(text);
+            out.push_str(RESET);
+            out
         };
 
-        if cfg.color {
-            cfg.accent.0.fg(&mut prefix);
-        }
-        prefix.push_str(&crate::fetch::title());
-        paint(&mut prefix, RESET);
-        prefix.push(' ');
-
-        if cfg.color {
-            cfg.value.0.fg(&mut prefix);
-        }
-        prefix.push_str(&cwd_display());
-        paint(&mut prefix, RESET);
-
-        prefix.push_str(if is_root() { " # " } else { " $ " });
+        let prefix = format!(
+            "{} {}{}",
+            paint(cfg.accent.0, &crate::fetch::title()),
+            paint(cfg.value.0, &cwd_display()),
+            if is_root() { " # " } else { " $ " },
+        );
 
         Self { prefix, buffer: String::new() }
     }
