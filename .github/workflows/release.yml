@@ -2,7 +2,7 @@ name: release
 
 # Publishing is what makes animfetch installable without a Rust toolchain. Push
 # a tag and this attaches ready-to-run binaries to a GitHub Release, which is
-# what `install.sh` and the AUR `-bin` package both fetch from.
+# where `install.sh` fetches from.
 on:
   push:
     tags: ['v*']

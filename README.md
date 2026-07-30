@@ -13,21 +13,20 @@ variables.
 
 ## Install
 
-### Arch Linux
+Either method works on any Linux distribution.
 
-```sh
-paru -S animfetch-bin      # or: yay -S animfetch-bin
-```
-
-### Any Linux
+### Prebuilt binary
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
 ```
 
 A static binary, so no Rust and no dependencies. Goes to `~/.local/bin`, or
-`/usr/local/bin` as root; set `ANIMFETCH_BINDIR` to override. To read it before
-running it, download it first — it is short.
+`/usr/local/bin` as root; set `ANIMFETCH_BINDIR` to override. To read the script
+before running it, download it first — it is short.
+
+Or take a tarball straight from the [latest release][releases] and put the
+binary wherever you like.
 
 ### From source
 
@@ -39,6 +38,8 @@ cargo install --locked --git https://github.com/Andrew-Velox/animfetch
 
 Installs to `~/.cargo/bin`. Update with `--force`, remove with
 `cargo uninstall animfetch`.
+
+[releases]: https://github.com/Andrew-Velox/animfetch/releases/latest
 
 ## Usage
 
