@@ -6,9 +6,7 @@ below it.
 
 ![animfetch running with a pinned fetch above a working shell](.github/assets/animfetch-demo.gif)
 
-<!-- <sub>[Watch as video](.github/assets/animfetch-video.mp4) for a sharper, full-resolution version.</sub> -->
-
-Linux only — all system data comes from `/proc`, `/sys`, and environment
+Linux only. All system data comes from `/proc`, `/sys`, and environment
 variables.
 
 ## Install
@@ -21,11 +19,11 @@ Either method works on any Linux distribution.
 curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
 ```
 
-A static binary, so no Rust and no dependencies. Goes to `~/.local/bin`, or
-`/usr/local/bin` as root; set `ANIMFETCH_BINDIR` to override. To read the script
-before running it, download it first — it is short.
+Static binary, so no Rust and no dependencies. It goes to `~/.local/bin`, or
+`/usr/local/bin` as root. Set `ANIMFETCH_BINDIR` to override. If you'd rather
+read the script before running it, download it first. It's short.
 
-Or take a tarball straight from the [latest release][releases] and put the
+You can also grab a tarball from the [latest release][releases] and put the
 binary wherever you like.
 
 ### From source
@@ -51,10 +49,9 @@ animfetch            # interactive: animfetch owns the prompt
 ```
 
 `--pin` is the one you probably want. It sets a scroll region so the terminal
-never scrolls the top rows, then detaches into the background and paints them
-while your own shell — your prompt, history, completions, aliases — runs
-underneath. Undo it with `animfetch --unpin`.
-
+never scrolls the top rows, then detaches into the background and paints them.
+Your own shell runs underneath, with its prompt, history, completions and
+aliases all intact. Undo it with `animfetch --unpin`.
 
 Common options:
 
@@ -73,7 +70,7 @@ for colour.
 
 ### In your shell startup
 
-Use `--pin`, `--play`, or `--once`. Never the bare `animfetch` — it waits for
+Use `--pin`, `--play`, or `--once`. Never the bare `animfetch`, which waits for
 input and replaces your shell for as long as it runs.
 
 Add one line to `~/.bashrc` or `~/.zshrc`:
@@ -88,10 +85,11 @@ or to `~/.config/fish/config.fish`:
 status is-interactive; and type -q animfetch; and animfetch --pin
 ```
 
-The guards keep it out of scripts and `scp`, which read your startup file too
-and break on unexpected output, and out of shells that cannot find the binary.
+Both guards are worth keeping. Scripts and `scp` read your startup file too, and
+they break on unexpected output. The second one stops a shell that can't find
+the binary from printing an error on every new terminal.
 
-`--pin` is safe to run for every shell: a second one in a nested shell notices
+`--pin` is safe to run for every shell. A second one in a nested shell notices
 the first and exits silently.
 
 ## Interactive mode keys
@@ -105,9 +103,9 @@ the first and exits silently.
 | `Ctrl-U` | Clear the line |
 | `Ctrl-W` | Delete the last word |
 
-`cd` and `exit` are handled internally; everything else runs under `$SHELL -c`.
-That means no aliases, no history, and no completion — it is a launcher with a
-prompt, not a shell.
+`cd` and `exit` are handled internally, everything else runs under `$SHELL -c`.
+So no aliases, no history, no completion. It's a launcher with a prompt, not a
+shell.
 
 ## Animations
 
@@ -130,15 +128,15 @@ $ animfetch --list
 ### Adding your own
 
 Drop plain-text frames into `~/.config/animfetch/anim/<name>/`, one file per
-frame, named so they sort in order (`01.txt`, `02.txt`, …). No rebuild needed —
-they are picked up at runtime, and a directory shadows a built-in of the same
-name.
+frame, named so they sort in order (`01.txt`, `02.txt`, `03.txt`). No rebuild
+needed. They're picked up at runtime, and a directory shadows a built-in of the
+same name.
 
 Two rules for the art:
 
 - Any non-whitespace character counts as ink. Frames are read as a coverage
-  mask, not as characters, so what you draw with does not matter.
-- Author every frame on one canvas. Padding is kept as written, and that is what
+  mask, not as characters, so what you draw with doesn't matter.
+- Author every frame on one canvas. Padding is kept as written, and that's what
   keeps poses registered against each other.
 
 To compile one into the binary instead, put it under `assets/anim/`, add it to
@@ -148,13 +146,13 @@ the `BUNDLED` table in `src/anim.rs`, then **rebuild and reinstall**:
 cargo build --release && install -Dm755 target/release/animfetch ~/.local/bin/animfetch
 ```
 
-Frames are embedded at compile time, so a new animation will not appear in
+Frames are embedded at compile time, so a new animation won't show up in
 `--list` until you reinstall.
 
 ## Configuration
 
-Optional. Every key is optional too, and a malformed file falls back to defaults
-rather than refusing to start.
+Optional, and every key inside it is optional too. A malformed file falls back
+to defaults instead of refusing to start.
 
 Copy [`config.example.toml`][example] to `~/.config/animfetch/config.toml`.
 
@@ -163,7 +161,7 @@ Copy [`config.example.toml`][example] to `~/.config/animfetch/config.toml`.
 ### Colours from your desktop theme
 
 Instead of fixed colours, animfetch can read whatever file themes the rest of
-your desktop — matugen, pywal, wallust — so the fetch follows your wallpaper.
+your desktop (matugen, pywal, wallust) so the fetch follows your wallpaper.
 
 ```sh
 animfetch --once --palette      # try it without editing anything
@@ -177,9 +175,9 @@ color_source = "palette"
 
 It looks for a matugen, pywal or wallust palette in that order, and reads the
 `primary`, `secondary`, `tertiary` and `on_surface` roles by default. Any role
-the file does not define keeps the fixed colour from your config, so this can
-only add colour, never take it away — and a missing palette file changes
-nothing at all.
+the file doesn't define keeps the fixed colour from your config, so this can
+only add colour, never take it away. A missing palette file changes nothing at
+all.
 
 Under `--pin` the file is re-read when it changes, so retheming your desktop
 recolours the running animation without restarting it.
@@ -190,6 +188,6 @@ in `config.example.toml` to point it somewhere else or pick different roles.
 ## A note on the prompt
 
 Interactive mode draws something that looks like a shell prompt, collects what
-you type, and hands it to `$SHELL`. That is a keylogger you happen to trust —
-fine on your own machine, worth being deliberate about anywhere else. The whole
-path is in `src/prompt.rs` and is short enough to read end to end.
+you type, and hands it to `$SHELL`. That's a keylogger you happen to trust.
+Fine on your own machine, worth thinking about anywhere else. The whole path is
+in `src/prompt.rs`, short enough to read end to end.

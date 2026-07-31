@@ -26,7 +26,7 @@ jobs:
   check:
     name: build, test and lint
     # No OS matrix on purpose. animfetch reads /proc and /sys, calls fork(2),
-    # statvfs(3) and tcgetpgrp(3), and needs a controlling terminal — it is
+    # statvfs(3) and tcgetpgrp(3), and needs a controlling terminal. It is
     # Linux-only by design (see the module docs in src/fetch.rs), so the other
     # runners would fail to build rather than tell us anything useful.
     runs-on: ubuntu-latest
@@ -63,8 +63,8 @@ jobs:
       - name: Test
         run: cargo test --locked
 
-      # Clippy reports the plain rustc lints too — unused imports, dead code,
-      # unreachable patterns — so this is the warnings gate for our own code.
+      # Clippy reports the plain rustc lints too (unused imports, dead code,
+      # unreachable patterns) so this is the warnings gate for our own code.
       #
       # RUSTFLAGS is deliberately left unset instead: it would apply -D warnings
       # to dependencies as well, and a future compiler emitting a deprecation
@@ -85,7 +85,7 @@ jobs:
       # This tree is hand-formatted and does not match rustfmt's output, so the
       # check would fail on code no PR has touched. If the project ever adopts
       # rustfmt, reformat everything in one dedicated commit first, then add the
-      # gate — otherwise it reports noise instead of problems.
+      # gate, otherwise it reports noise instead of problems.
 
       - name: Build release
         run: cargo build --locked --release
@@ -119,7 +119,7 @@ jobs:
 
           # Every animation shipped in assets/ must actually load. There is no
           # animation directory in the runner's HOME, so these can only resolve
-          # through the bundled copies — which means this also catches art that
+          # through the bundled copies, which means this also catches art that
           # was added to assets/ but never registered in the BUNDLED table in
           # src/anim.rs.
           for dir in assets/anim/*/; do

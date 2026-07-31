@@ -1,18 +1,7 @@
-//! Terminal state ownership.
+//! Raw mode and the scroll region: the two bits of terminal state we own.
 //!
-//! Raw mode is what lets the animation and the prompt share one loop: with
-//! `ECHO`/`ICANON` off the kernel stops buffering a line before handing it to
-//! us, so keystrokes are readable the moment they arrive instead of at Enter.
-//!
-//! A scroll region (DECSTBM) is what keeps the fetch pinned. Once set, the
-//! terminal confines scrolling to the rows below it, so command output can fill
-//! and scroll the lower part of the screen while the art above stays untouched
-//! — no redrawing on our part, the terminal simply never scrolls those rows.
-//!
-//! Both settings outlive the process if we do not undo them, and a terminal
-//! left in raw mode with a scroll region is thoroughly broken. Every exit path
-//! therefore restores: `Drop` covers normal returns and `?` bail-outs, the panic
-//! hook covers panics.
+//! Both outlive the process if we don't undo them, so every exit path restores.
+//! `Drop` handles returns, the panic hook handles panics.
 
 use std::io::{self, Write};
 use std::os::fd::{AsRawFd, RawFd};
@@ -25,10 +14,8 @@ pub struct Guard {
 }
 
 impl Guard {
-    /// Enters raw mode and hides the cursor.
-    ///
-    /// We deliberately stay on the main screen rather than switching to the
-    /// alternate one, so what you run leaves its output in your scrollback.
+    /// Enter raw mode and hide the cursor. Stays on the main screen so command
+    /// output lands in your scrollback.
     pub fn acquire() -> io::Result<Self> {
         terminal::enable_raw_mode()?;
         write!(io::stdout(), "{HIDE_CURSOR}")?;
@@ -38,11 +25,8 @@ impl Guard {
         Ok(Self { restored: false })
     }
 
-    /// Hand the terminal back to a child process: cooked mode and a visible
-    /// cursor, so it behaves exactly as it would under your shell.
-    ///
-    /// The scroll region deliberately stays set — that is what keeps the
-    /// child's output below the fetch.
+    /// Hand the terminal to a child: cooked mode, visible cursor. The scroll
+    /// region stays set, which is what keeps the child's output below the fetch.
     pub fn suspend(&self) -> io::Result<()> {
         terminal::disable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -58,8 +42,7 @@ impl Guard {
         stdout.flush()
     }
 
-    /// Undo everything. Idempotent, so `Drop` after an explicit call is
-    /// harmless.
+    /// Undo everything. Idempotent, so `Drop` after an explicit call is fine.
     pub fn restore(&mut self) {
         if self.restored {
             return;
@@ -79,8 +62,7 @@ impl Drop for Guard {
     }
 }
 
-/// A panic in raw mode would otherwise print an unreadable backtrace into a
-/// terminal with no echo, no line wrapping, and a scroll region still set.
+/// Without this a panic dumps its backtrace into a terminal still in raw mode.
 fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -95,12 +77,8 @@ pub const HIDE_CURSOR: &str = "\x1b[?25l";
 pub const SHOW_CURSOR: &str = "\x1b[?25h";
 pub const RESET_SCROLL_REGION: &str = "\x1b[r";
 
-/// DECOM. With origin mode set, row addressing is relative to the scroll
-/// region and the cursor cannot leave it.
-///
-/// This is what keeps `clear` from stranding the shell above a pinned fetch:
-/// `clear` homes the cursor with `ESC[H`, which without this means screen row
-/// 1 — inside the pinned rows, where the shell's prompt is then painted over.
+/// DECOM: row addressing becomes relative to the scroll region. Without it,
+/// `clear` homes to screen row 1 and paints the shell's prompt over the art.
 pub const SET_ORIGIN_MODE: &str = "\x1b[?6h";
 pub const RESET_ORIGIN_MODE: &str = "\x1b[?6l";
 
@@ -108,10 +86,8 @@ pub const RESET_ORIGIN_MODE: &str = "\x1b[?6l";
 pub const HOME: &str = "\x1b[H";
 pub const CLEAR_SCREEN: &str = "\x1b[2J";
 
-/// Confine scrolling to `top..=bottom`, 1-based and inclusive.
-///
-/// Setting the region homes the cursor as a side effect, so callers must
-/// reposition afterwards.
+/// Confine scrolling to `top..=bottom`, 1-based. Homes the cursor as a side
+/// effect, so callers must reposition.
 pub fn scroll_region(top: u16, bottom: u16) -> String {
     format!("\x1b[{top};{bottom}r")
 }
@@ -121,13 +97,10 @@ pub fn move_to(row: u16, col: u16) -> String {
     format!("\x1b[{row};{col}H")
 }
 
-/// Terminal size in cells, with a usable fallback when stdout is not a TTY
-/// (piped output still needs *some* geometry to lay out against).
+/// Terminal size in cells, falling back to something usable when piped.
 ///
-/// The ioctl is issued directly rather than through crossterm, which opens
-/// `/dev/tty` on every call and, failing that, shells out to `tput`. That costs
-/// about a millisecond — a third of the startup this tool is meant to add to a
-/// shell, and paid again twice a second for as long as a pinned fetch runs.
+/// Direct ioctl, not crossterm: that one opens `/dev/tty` every call and can
+/// shell out to `tput`, costing about a millisecond.
 pub fn size() -> (u16, u16) {
     // Whichever of our own streams is still a terminal knows the size already.
     for fd in [libc::STDOUT_FILENO, libc::STDERR_FILENO, libc::STDIN_FILENO] {
@@ -136,9 +109,7 @@ pub fn size() -> (u16, u16) {
         }
     }
 
-    // All three are redirected, but a controlling terminal may still exist and
-    // its width is the right one to lay out against. Only reached when the
-    // cheap path found nothing, so the open costs nothing in the normal case.
+    // All redirected, but a controlling terminal may still exist.
     if let Ok(tty) = std::fs::File::open("/dev/tty")
         && let Some(size) = winsize(tty.as_raw_fd())
     {
@@ -152,14 +123,11 @@ pub fn size() -> (u16, u16) {
 fn winsize(fd: RawFd) -> Option<(u16, u16)> {
     let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
 
-    // SAFETY: TIOCGWINSZ writes a `winsize` through the pointer and nothing
-    // else, `ws` is exactly that and is writable, and failure is reported by
-    // the return value rather than by leaving `ws` in some invalid state.
+    // SAFETY: TIOCGWINSZ only writes a `winsize`, which is what `ws` is.
     if unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &raw mut ws) } != 0 {
         return None;
     }
 
-    // A terminal that reports zero is one we cannot lay out against; treat it
-    // the same as no terminal at all and let the caller fall back.
+    // Zero is unusable, so treat it as no terminal at all.
     (ws.ws_col > 0 && ws.ws_row > 0).then_some((ws.ws_col, ws.ws_row))
 }

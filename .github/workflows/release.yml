@@ -7,7 +7,7 @@ on:
   push:
     tags: ['v*']
   # Re-run against an existing tag if a release needs rebuilding. Check out the
-  # tag itself when dispatching, not a branch — the version comes from the ref.
+  # tag itself when dispatching, not a branch. The version comes from the ref.
   workflow_dispatch:
 
 permissions:
@@ -37,7 +37,7 @@ jobs:
       # musl, not glibc. A glibc binary built here refuses to start on any
       # distro with an older glibc than the runner's, which is most of the point
       # of shipping a binary at all. Every dependency is pure Rust, so the musl
-      # target needs no C toolchain — see `cargo tree`.
+      # target needs no C toolchain. See `cargo tree`.
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal

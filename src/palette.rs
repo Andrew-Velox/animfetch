@@ -1,14 +1,6 @@
-//! Dynamic colours from a generated palette file.
-//!
-//! Desktops that theme themselves from the wallpaper — matugen, pywal, wallust
-//! — all end up writing a file of `name: colour` pairs somewhere. Reading that
-//! is what lets the fetch follow the rest of the desktop instead of carrying a
-//! fixed palette of its own, and it is why changing your wallpaper recolours
-//! the animation.
-//!
-//! Nothing here is ever fatal. A missing file, an unreadable one, or a role
-//! name the file does not define all leave the configured colours in place, so
-//! turning this on cannot cost you a working fetch.
+//! Dynamic colours from whatever themes your desktop (matugen, pywal, wallust).
+//! They all write `name: colour` pairs somewhere; reading that is why changing
+//! your wallpaper recolours the animation. Nothing here is ever fatal.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -31,13 +23,8 @@ impl Palette {
     }
 }
 
-/// Every `"name": "#rrggbb"` pair in `text`, at any nesting depth.
-///
-/// Deliberately a scanner rather than a JSON parser. Palette files are
-/// generated, and all we need from them are the string pairs whose value is a
-/// colour — which this finds whether the file is flat (matugen) or groups its
-/// colours under a parent key (pywal's `colors.color0`). A file it cannot make
-/// sense of simply yields nothing, and the caller keeps its configured colours.
+/// Every `"name": "#rrggbb"` pair in `text`, at any depth. A scanner, not a JSON
+/// parser: works on flat files (matugen) and nested ones (pywal) alike.
 fn scan(text: &str) -> Vec<(String, Rgb)> {
     let mut out = Vec::new();
     let mut chars = text.chars();
@@ -47,8 +34,7 @@ fn scan(text: &str) -> Vec<(String, Rgb)> {
     while let Some(c) = chars.next() {
         match c {
             ':' => after_colon = true,
-            // Any of these ends whatever pair was being read. Without this a
-            // bare string in an array would be taken for the next key.
+            // Ends the current pair, so array strings aren't read as keys.
             ',' | '{' | '}' | '[' | ']' => {
                 key = None;
                 after_colon = false;
@@ -81,8 +67,7 @@ fn read_string(chars: &mut std::str::Chars<'_>) -> String {
     while let Some(c) = chars.next() {
         match c {
             '"' => break,
-            // Only enough unescaping to keep a quote from ending the string
-            // early; colour names and hex values need no more than this.
+            // Just enough to stop a quote ending the string early.
             '\\' => out.extend(chars.next()),
             _ => out.push(c),
         }
@@ -110,11 +95,8 @@ fn mtime(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
 }
 
-/// Resolve dynamic colours into `cfg`, returning the file they came from.
-///
-/// Each role is applied only when the file actually defines it, so a palette
-/// that covers some roles and not others falls back per colour rather than all
-/// or nothing.
+/// Resolve dynamic colours into `cfg`. Roles the file omits keep their
+/// configured value, so this falls back per colour rather than all or nothing.
 pub fn apply(cfg: &mut Config) -> Option<PathBuf> {
     if cfg.color_source != ColorSource::Palette {
         return None;
@@ -138,8 +120,7 @@ pub fn apply(cfg: &mut Config) -> Option<PathBuf> {
     Some(path)
 }
 
-/// Notices when the palette file is rewritten, so a long-running fetch can
-/// recolour itself instead of showing the palette from whenever it started.
+/// Notices when the palette file is rewritten, so `--pin` can recolour live.
 pub struct Watch {
     path: Option<PathBuf>,
     seen: Option<SystemTime>,
@@ -155,8 +136,7 @@ impl Watch {
         Self { path, seen }
     }
 
-    /// True once per rewrite. A file that did not exist at startup is not
-    /// picked up later; the tools that generate these rewrite in place.
+    /// True once per rewrite. A file absent at startup is never picked up.
     pub fn changed(&mut self) -> bool {
         let Some(path) = self.path.as_deref() else {
             return false;
@@ -282,8 +262,7 @@ mod tests {
         let mut watch = Watch::new(&watching(&path));
         assert!(!watch.changed(), "nothing has happened yet");
 
-        // Set the time explicitly rather than sleeping: a filesystem with
-        // coarse mtime resolution would otherwise make this flaky.
+        // Set mtime explicitly; sleeping is flaky on coarse filesystems.
         let file = std::fs::File::options().write(true).open(&path).unwrap();
         file.set_modified(SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
 
@@ -325,8 +304,7 @@ mod tests {
 
     #[test]
     fn tilde_expands_against_home() {
-        // Uses whatever HOME is set to rather than setting it: set_var is
-        // unsound with other threads around, and the test runner has them.
+        // Reads HOME rather than setting it: set_var is unsound with threads.
         if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
             assert_eq!(expand("~/x/y"), Path::new(&home).join("x/y"));
         }

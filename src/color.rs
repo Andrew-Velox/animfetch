@@ -1,9 +1,5 @@
-//! Truecolor helpers.
-//!
-//! Everything here emits raw SGR escapes rather than going through crossterm's
-//! command types, because the renderer builds whole lines as strings and
-//! compares them between frames. Keeping colour *in* the string means the diff
-//! catches colour changes for free.
+//! Truecolor helpers. Raw SGR escapes, not crossterm commands, so colour lives
+//! in the line strings and the frame diff catches colour changes for free.
 
 use serde::Deserialize;
 
@@ -11,12 +7,8 @@ use serde::Deserialize;
 pub struct Rgb(pub u8, pub u8, pub u8);
 
 impl Rgb {
-    /// SGR foreground sequence, e.g. `\x1b[38;2;255;0;0m`.
-    ///
-    /// Assembled by hand rather than with `write!`. Every art row and every
-    /// info row starts with one of these, so a frame emits a few dozen — enough
-    /// that the formatting machinery `write!` drags in is the largest single
-    /// cost of composing one.
+    /// SGR foreground sequence, e.g. `\x1b[38;2;255;0;0m`. Built by hand because
+    /// a frame emits dozens and `write!` was the biggest cost of composing one.
     pub fn fg(self, out: &mut String) {
         let Rgb(r, g, b) = self;
         out.push_str("\x1b[38;2;");
@@ -34,7 +26,7 @@ impl Rgb {
     }
 }
 
-/// Append a byte in decimal, shortest form — exactly what `{}` would produce.
+/// Append a byte in decimal, shortest form. Same output as `{}`.
 fn push_dec(out: &mut String, n: u8) {
     if n >= 100 {
         out.push((b'0' + n / 100) as char);
@@ -47,11 +39,8 @@ fn push_dec(out: &mut String, n: u8) {
 
 pub const RESET: &str = "\x1b[0m";
 
-/// Parse `#rgb`, `#rrggbb`, or the same without the leading `#`.
-///
-/// Matched on bytes rather than sliced by index: `s` comes straight from the
-/// config file, and a multi-byte character can make a six-*byte* string that
-/// has no character boundary where a slice would need one.
+/// Parse `#rgb`, `#rrggbb`, or either without the `#`. Matched on bytes, since
+/// a six-byte string from a config may have no char boundary to slice at.
 pub fn parse_hex(s: &str) -> Option<Rgb> {
     let nibble = |b: &u8| (*b as char).to_digit(16).map(|d| d as u8);
 
@@ -67,9 +56,8 @@ pub fn parse_hex(s: &str) -> Option<Rgb> {
     }
 }
 
-/// A colour ramp sampled by position. Deserialised straight from a list of hex
-/// strings; unparseable entries are dropped rather than failing the whole load,
-/// so one typo in a config does not cost you the animation.
+/// A colour ramp sampled by position. Bad hex entries are dropped, so one typo
+/// in a config doesn't cost you the animation.
 #[derive(Debug, Clone, Default)]
 pub struct Gradient {
     stops: Vec<Rgb>,
@@ -124,8 +112,7 @@ mod tests {
 
     #[test]
     fn fg_emits_exactly_what_formatting_would() {
-        // `fg` builds the sequence by hand for speed; this is what keeps it
-        // honest about producing the same bytes.
+        // `fg` is hand-built for speed; this keeps it honest.
         for rgb in [Rgb(0, 0, 0), Rgb(255, 255, 255), Rgb(1, 10, 100), Rgb(9, 99, 199)] {
             let mut out = String::new();
             rgb.fg(&mut out);
@@ -145,8 +132,7 @@ mod tests {
 
     #[test]
     fn non_ascii_is_rejected_rather_than_slicing_mid_character() {
-        // "€" is three bytes, so this is six bytes long but has no boundary at
-        // byte 2. Indexing there would panic on a value from someone's config.
+        // Six bytes, no char boundary at byte 2. Indexing there would panic.
         assert_eq!(parse_hex("€xxx"), None);
         assert_eq!(parse_hex("#€é"), None);
         // from_str_radix used to accept a sign; a nibble must be a bare digit.

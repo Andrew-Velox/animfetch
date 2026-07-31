@@ -1,11 +1,8 @@
-//! The inline command prompt.
+//! The inline command prompt: the security-relevant part of the program.
 //!
-//! This is the security-relevant part of the program: it draws something that
-//! looks like a shell prompt, collects what you type, and hands it to a real
-//! shell. Keeping that whole path in one short file is deliberate — it should
-//! stay easy to read end to end and confirm that nothing else can influence
-//! what gets executed. In particular, no config value and no animation file
-//! reaches `run`; the only input is the user's own keystrokes.
+//! It draws something that looks like a shell prompt and hands what you type to
+//! a real shell. Kept in one short file so you can read it end to end. No config
+//! value and no animation file reaches `run`; only your keystrokes do.
 
 use std::ffi::OsString;
 use std::io;
@@ -131,11 +128,8 @@ pub enum Builtin {
     Exit,
 }
 
-/// Recognise the builtins, or `None` to hand the command to the shell.
-///
-/// `cd` in a child process changes that process's directory and then exits,
-/// which does nothing observable — so every shell wrapper has to implement it
-/// itself, and so do we.
+/// Recognise the builtins, or `None` to hand the command to the shell. `cd` in
+/// a child does nothing observable, so every shell wrapper implements it.
 pub fn builtin(command: &str) -> Option<Builtin> {
     // Anything with shell syntax in it belongs to the shell, even if it starts
     // with `cd`. `cd /tmp && ls` is not something we can interpret, and getting
@@ -174,11 +168,8 @@ fn change_dir(arg: &str) -> Result<(), String> {
     std::env::set_current_dir(&target)
         .map_err(|e| format!("cd: {}: {e}", target.display()))?;
 
-    // Keep the environment consistent so child processes see the same view.
-    //
-    // SAFETY: `set_var` is unsound only when another thread may be reading the
-    // environment concurrently. animfetch is single-threaded throughout, and
-    // this runs between child processes rather than alongside one.
+    // SAFETY: `set_var` is only unsound with another thread reading the
+    // environment. We are single-threaded, and this runs between children.
     unsafe {
         if let Some(previous) = previous {
             std::env::set_var("OLDPWD", previous);
@@ -190,23 +181,14 @@ fn change_dir(arg: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Hand `command` to the user's shell, inheriting all three standard streams so
-/// interactive programs work normally.
-///
-/// The terminal must already have been restored to cooked mode by the caller.
+/// Hand `command` to the user's shell, inheriting all three streams. The caller
+/// must have restored cooked mode first.
 pub fn run(command: &str) -> io::Result<ExitStatus> {
     let shell = std::env::var_os("SHELL").unwrap_or_else(|| OsString::from("/bin/sh"));
 
-    // Plain `-c`: deliberately not `-l` and not `-i`.
-    //
-    // Both of those make the shell source the user's startup files, and startup
-    // files print things — a fetch tool, a greeting, a version manager's banner
-    // — which would appear above the output of the command that was actually
-    // asked for. We were launched from the user's shell, so PATH and the rest
-    // of the environment are already inherited and need no profile to rebuild.
-    //
-    // The cost is that aliases are not expanded, since those live only in an
-    // interactive shell's memory.
+    // Plain `-c`, not `-l` or `-i`: those source startup files, and startup
+    // files print things. We inherit the environment anyway. The cost is that
+    // aliases aren't expanded.
     let mut builder = Command::new(&shell);
     builder.arg("-c").arg(command);
 
@@ -251,9 +233,8 @@ fn foreground_group() -> Option<libc::pid_t> {
 
 /// Hand the terminal to `pgid`, so signals from the keyboard reach it.
 fn set_foreground_group(pgid: libc::pid_t) {
-    // A process not in the foreground group gets SIGTTOU for doing this — which
-    // is exactly our situation while handing the terminal back. Ignoring it for
-    // the duration is the standard dance every shell performs.
+    // We get SIGTTOU for this while not in the foreground group. Every shell
+    // does the same dance.
     unsafe {
         let previous = libc::signal(libc::SIGTTOU, libc::SIG_IGN);
         libc::tcsetpgrp(libc::STDIN_FILENO, pgid);

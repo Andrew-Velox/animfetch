@@ -1,12 +1,7 @@
-//! System information, Linux only.
+//! System information, Linux only. All of it from `/proc`, `/sys` and env vars,
+//! never subprocesses, which is why this runs in about a millisecond.
 //!
-//! Everything here comes from `/proc`, `/sys`, and environment variables — no
-//! subprocesses. That is the difference between a fetch that runs in a
-//! millisecond and one you notice on every new shell, and it matters more here
-//! than in neofetch because this tool is meant to sit in your shell startup.
-//!
-//! Porting to another platform means reimplementing this module; nothing else
-//! knows where the numbers come from.
+//! Porting means reimplementing this module; nothing else knows the sources.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -14,8 +9,7 @@ use std::path::Path;
 
 use crate::config::Module;
 
-/// One row of the info pane. An empty `label` spans the full width, which the
-/// colour swatches use.
+/// One info row. An empty `label` spans the full width (the colour swatches).
 pub struct Item {
     pub label: &'static str,
     pub value: String,
@@ -27,13 +21,11 @@ pub fn title() -> String {
     format!("{user}@{}", hostname())
 }
 
-/// Collect the requested modules, skipping any that cannot be determined on
-/// this machine rather than printing "Unknown".
+/// Collect the requested modules, skipping ones this machine can't answer.
 pub fn collect(modules: &[Module]) -> Vec<Item> {
     let mut items = Vec::with_capacity(modules.len());
 
-    // Memory and Swap are two views of one file, and the default config asks
-    // for both. Read it once, and only if something actually wants it.
+    // Memory and Swap read the same file. Do it once, and only if asked.
     let meminfo = modules
         .iter()
         .any(|m| matches!(m, Module::Memory | Module::Swap))
@@ -85,8 +77,7 @@ fn host() -> Option<String> {
     let dmi = Path::new("/sys/devices/virtual/dmi/id");
     let name = read_trimmed(dmi.join("product_name"))?;
 
-    // Laptops put the useful string in product_version; desktops leave it as
-    // filler like "Default string".
+    // Laptops put the useful string here; desktops leave filler.
     match read_trimmed(dmi.join("product_version")).filter(|v| is_meaningful(v)) {
         Some(version) => Some(format!("{name} {version}")),
         None => Some(name),
@@ -121,8 +112,7 @@ fn packages() -> Option<String> {
 }
 
 fn wm() -> Option<String> {
-    // Compositor-specific markers are more reliable than the generic env vars,
-    // which sessions often leave unset or stale.
+    // More reliable than the generic env vars, which go stale.
     if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() {
         return Some("Hyprland".into());
     }
@@ -134,8 +124,7 @@ fn wm() -> Option<String> {
         .or_else(|| env("XDG_SESSION_DESKTOP"))
         .or_else(|| env("DESKTOP_SESSION"))?;
 
-    // XDG_CURRENT_DESKTOP is colon-separated and may carry a prefix, e.g.
-    // "wlroots:Hyprland" or "ubuntu:GNOME".
+    // Colon-separated, may carry a prefix: "wlroots:Hyprland".
     let name = name.rsplit(':').next().unwrap_or(&name).to_string();
 
     let session = match env("XDG_SESSION_TYPE").as_deref() {
@@ -151,8 +140,7 @@ fn terminal() -> Option<String> {
         return Some(prog);
     }
 
-    // Walk up the process tree past our own shell; the first ancestor that is
-    // not a shell is the terminal that spawned it.
+    // First ancestor that isn't a shell is the terminal that spawned us.
     let mut pid = parent_pid(std::process::id())?;
     for _ in 0..8 {
         let name = comm(pid)?;
@@ -169,18 +157,14 @@ fn terminal() -> Option<String> {
 }
 
 fn cpu() -> Option<String> {
-    // /proc/cpuinfo repeats a whole block per core, so on a many-core machine
-    // it is tens of kilobytes that the kernel formats field by field as we read
-    // it — by some distance the most expensive file this module touches. The
-    // model name is in the first block, and the core count is a dozen bytes
-    // elsewhere, so neither actually needs the rest of it.
+    // cpuinfo repeats a block per core, so it is tens of kilobytes the kernel
+    // formats as we read. The model name is in the first block, and the core
+    // count lives elsewhere, so neither needs the rest.
     let head = online_cpus().zip(read_prefix("/proc/cpuinfo", 4096));
     let (model, cores) = match head {
         Some((cores, head)) => match model_name(&head) {
             Some(model) => (model, cores),
-            // A kernel whose first block runs past the prefix. Reading the
-            // whole file is what this was avoiding, but dropping the row over
-            // it would be trading a real feature for the saving.
+            // First block ran past the prefix; better slow than missing.
             None => whole_cpuinfo()?,
         },
         // Nothing to count online CPUs from, so the file is needed anyway.
@@ -196,8 +180,7 @@ fn cpu() -> Option<String> {
     Some(format!("{model} ({cores}){ghz}"))
 }
 
-/// Model name and core count read the original way: the whole file, counting
-/// its `processor` lines.
+/// The slow path: whole file, counting `processor` lines.
 fn whole_cpuinfo() -> Option<(String, usize)> {
     let all = fs::read_to_string("/proc/cpuinfo").ok()?;
     let cores = all.lines().filter(|l| l.starts_with("processor")).count();
@@ -213,8 +196,7 @@ fn model_name(text: &str) -> Option<String> {
 fn memory(info: &str) -> Option<String> {
     let total = meminfo_field(info, "MemTotal")?;
 
-    // MemAvailable accounts for reclaimable cache; MemFree alone badly
-    // overstates usage on any machine that has been up for a while.
+    // MemAvailable counts reclaimable cache; MemFree overstates usage.
     let available = meminfo_field(info, "MemAvailable")?;
     Some(format_usage(total - available, total))
 }
@@ -232,17 +214,15 @@ fn disk(mount: &str) -> Option<String> {
     let path = std::ffi::CString::new(mount).ok()?;
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
 
-    // SAFETY: `path` is a valid NUL-terminated C string and `stat` is a
-    // correctly sized, writable statvfs. statvfs writes only through the
-    // pointer and reports failure via the return code.
+    // SAFETY: valid C string, correctly sized writable statvfs.
     if unsafe { libc::statvfs(path.as_ptr(), &mut stat) } != 0 {
         return None;
     }
 
-    // f_frsize is the fragment size the block counts are expressed in.
+    // Block counts are in units of f_frsize.
     let unit = stat.f_frsize as u64;
     let total = stat.f_blocks as u64 * unit;
-    // f_bavail excludes root-reserved blocks, which is what a user cares about.
+    // f_bavail excludes root-reserved blocks.
     let free = stat.f_bavail as u64 * unit;
     if total == 0 {
         return None;
@@ -295,8 +275,7 @@ fn hostname() -> String {
 
 fn parent_pid(pid: u32) -> Option<u32> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    // Field 2 is the executable name in parentheses and may itself contain
-    // spaces or parens, so parse from the last ')' rather than splitting.
+    // Field 2 can contain spaces and parens, so parse from the last ')'.
     let rest = &stat[stat.rfind(')')? + 1..];
     rest.split_whitespace().nth(1)?.parse().ok()
 }
@@ -306,7 +285,7 @@ fn comm(pid: u32) -> Option<String> {
 }
 
 fn is_shell(name: &str) -> bool {
-    // Login shells appear as "-bash"; strip the marker before comparing.
+    // Login shells appear as "-bash".
     let name = name.trim_start_matches('-');
     matches!(name, "sh" | "bash" | "zsh" | "fish" | "dash" | "ksh" | "tcsh" | "nu" | "elvish")
 }
@@ -320,28 +299,19 @@ fn is_meaningful(value: &str) -> bool {
         && !value.eq_ignore_ascii_case("None")
 }
 
-/// Is this directory entry a directory, following symlinks as `is_dir` does?
-///
-/// The kind comes back with the directory listing itself, so the common case
-/// costs nothing. Going through `entry.path().is_dir()` instead would stat
-/// every entry — over a thousand syscalls on an ordinary Arch install, which
-/// alone took longer than everything else this module does put together.
+/// A directory, following symlinks like `is_dir`. The kind comes free with the
+/// listing; `path().is_dir()` would stat every one of a thousand packages.
 fn is_dir(entry: &fs::DirEntry) -> bool {
     match entry.file_type() {
-        // A symlink's own type says nothing about its target; this is the one
-        // case that still has to ask the filesystem.
+        // Only case that still has to ask the filesystem.
         Ok(kind) if kind.is_symlink() => entry.path().is_dir(),
         Ok(kind) => kind.is_dir(),
         Err(_) => false,
     }
 }
 
-/// How many CPUs are online, from the one-line summary the kernel keeps for
-/// exactly this.
-///
-/// Deliberately `online` rather than `present`: counting `processor` lines in
-/// cpuinfo, which this replaces, counts the online ones, and a machine with a
-/// core parked should not start reporting a different number.
+/// How many CPUs are online. `online` not `present`, to match what counting
+/// cpuinfo's `processor` lines used to report.
 fn online_cpus() -> Option<usize> {
     count_cpu_list(&read_trimmed("/sys/devices/system/cpu/online")?)
 }
@@ -358,12 +328,8 @@ fn count_cpu_list(text: &str) -> Option<usize> {
     (total > 0).then_some(total)
 }
 
-/// Read at most `limit` bytes of `path`.
-///
-/// For an ordinary file this is just a short read. For the generated files
-/// under `/proc` it also stops the kernel formatting the rest, which is where
-/// the saving is. Invalid UTF-8 — including a character the limit cut in half —
-/// is replaced rather than rejected, since the caller is matching on ASCII.
+/// Read at most `limit` bytes. Under `/proc` this also stops the kernel
+/// formatting the rest. Bad UTF-8 is replaced, since callers match on ASCII.
 fn read_prefix(path: &str, limit: u64) -> Option<String> {
     use std::io::Read as _;
 
@@ -402,7 +368,7 @@ fn human_kib(kib: u64) -> String {
         value /= 1024.0;
         unit += 1;
     }
-    // Sub-10 values need a decimal to stay informative; larger ones do not.
+    // Sub-10 values need a decimal to stay informative.
     if value < 10.0 && unit > 0 {
         format!("{value:.2}{}", UNITS[unit])
     } else {
@@ -420,8 +386,7 @@ fn humanize_duration(secs: u64) -> String {
     if h > 0 {
         parts.push(format!("{h} hour{}", plural(h)));
     }
-    // Always show minutes when nothing bigger applies, so a fresh boot reads
-    // "0 mins" rather than an empty string.
+    // So a fresh boot reads "0 mins" rather than nothing.
     if m > 0 || parts.is_empty() {
         parts.push(format!("{m} min{}", plural(m)));
     }
@@ -459,8 +424,7 @@ mod tests {
 
     #[test]
     fn only_the_first_block_of_cpuinfo_is_read_and_it_holds_the_model() {
-        // The saving in `cpu` rests on this: the kernel formats a full block
-        // per core, and the model name is in the first one.
+        // The whole saving rests on the model name being in the first block.
         let Some(head) = read_prefix("/proc/cpuinfo", 4096) else {
             return; // no /proc here
         };
@@ -474,8 +438,7 @@ mod tests {
 
     #[test]
     fn the_core_count_agrees_with_what_cpuinfo_lists() {
-        // `cpu` gets this from /sys now; it must still be the number of
-        // `processor` lines it used to count.
+        // Must still match what counting `processor` lines reported.
         let Some(online) = online_cpus() else { return };
         let Ok(info) = fs::read_to_string("/proc/cpuinfo") else { return };
 
@@ -539,7 +502,7 @@ mod tests {
 
     #[test]
     fn parent_pid_handles_names_containing_spaces_and_parens() {
-        // Field 2 is "(weird ) name)" here; a naive split would misread ppid.
+        // Field 2 is "(weird ) name)"; a naive split misreads ppid.
         let stat = "1234 (weird ) name) S 42 1234 1234 0 -1 4194304";
         let rest = &stat[stat.rfind(')').unwrap() + 1..];
         let ppid: u32 = rest.split_whitespace().nth(1).unwrap().parse().unwrap();

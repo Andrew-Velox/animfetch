@@ -1,16 +1,8 @@
-//! animfetch — an animated system fetch that stays usable while it animates.
+//! animfetch: an animated system fetch that stays usable while it animates.
 //!
-//! Two ideas carry the design.
-//!
-//! Raw mode plus a non-blocking event poll means the animation and the prompt
-//! are not competing. Each pass through the loop draws a frame, then waits for
-//! input *only until the next frame is due*. Keystrokes are handled the instant
-//! they arrive, and the frame clock is absolute rather than accumulated, so
-//! rendering cost does not make the animation drift slow.
-//!
-//! A scroll region pins the fetch. The terminal is told never to scroll the top
-//! rows, so the prompt and everything you run live in the region below and
-//! scroll freely there, while the art above stays put.
+//! Two ideas carry it. Raw mode plus a non-blocking poll means each loop draws a
+//! frame then waits for input only until the next one is due, so typing stays
+//! instant. A scroll region pins the art, so everything you run scrolls below.
 
 mod anim;
 mod color;
@@ -59,13 +51,11 @@ fn run() -> io::Result<ExitCode> {
     let (mut cfg, warning) = config::load(dir.as_deref());
     args.apply(&mut cfg);
 
-    // Before anything is drawn, so every mode gets the same colours. `--pin`
-    // additionally re-reads the file while it runs; see `palette::Watch`.
+    // Before anything is drawn, so every mode gets the same colours.
     palette::apply(&mut cfg);
 
     let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
-    // Colour is meaningless once the output is piped into a file, and NO_COLOR
-    // is the conventional way for a user to say they never want it.
+    // Meaningless when piped, and NO_COLOR is how you opt out.
     if !io::stdout().is_terminal() || std::env::var_os("NO_COLOR").is_some() {
         cfg.color = false;
     }
@@ -78,8 +68,7 @@ fn run() -> io::Result<ExitCode> {
     }
 
     if let Some(name) = &args.set {
-        // Refuse to persist a name that will not load; a config that breaks
-        // every future run is worse than a rejected command.
+        // A config that breaks every future run is worse than an error now.
         Animation::load(anim_dir.as_deref(), name)?;
 
         let Some(dir) = dir.as_deref() else {
@@ -117,8 +106,7 @@ fn run() -> io::Result<ExitCode> {
 
     let status = shell_loop(&fetch)?;
 
-    // Warnings are held back until the terminal is readable again; printing one
-    // earlier would have been wiped by the first frame.
+    // Held back until now; earlier would have been wiped by the first frame.
     if let Some(warning) = warning {
         eprintln!("animfetch: {warning}");
     }
@@ -148,12 +136,8 @@ fn list_animations(dir: Option<&std::path::Path>, current: &str) {
     }
 }
 
-/// Write `animation = "<name>"` into the config, creating it if needed.
-///
-/// This edits the file as text rather than reserialising the parsed config,
-/// which would discard every comment and every key left at its default. Only
-/// the `animation` line is rewritten — including any trailing comment on it,
-/// which is the one thing this does lose.
+/// Write `animation = "<name>"` into the config, creating it if needed. Edited
+/// as text, so comments survive. A trailing comment on that line does not.
 fn set_animation(dir: &std::path::Path, name: &str) -> io::Result<std::path::PathBuf> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join("config.toml");
@@ -189,10 +173,8 @@ fn set_animation(dir: &std::path::Path, name: &str) -> io::Result<std::path::Pat
 /// Erase from the cursor to the end of the line.
 const CLEAR_LINE: &str = "\x1b[K";
 
-/// Everything the drawing code needs that is fixed for the whole run.
-///
-/// These four travel together through every mode, so they are passed as one
-/// value rather than as a parameter list each call site has to keep in order.
+/// What the drawing code needs and never changes. Passed as one value because
+/// these four travel together through every mode.
 #[derive(Clone, Copy)]
 pub struct Fetch<'a> {
     pub animation: &'a Animation,
@@ -201,10 +183,8 @@ pub struct Fetch<'a> {
     pub items: &'a [Item],
 }
 
-/// Pre-scaled frames for one terminal size, with the content they sit beside.
-///
-/// Rebuilt on every resize, which is exactly when the scaled art, the pane
-/// width, and therefore every [`render::Scene`] built from them go stale.
+/// Pre-scaled frames for one terminal size. Rebuilt on resize, which is exactly
+/// when the art and every [`render::Scene`] built from it go stale.
 pub struct Layout<'a> {
     frames: Vec<Vec<String>>,
     art_w: usize,
@@ -215,29 +195,21 @@ pub struct Layout<'a> {
 }
 
 impl<'a> Layout<'a> {
-    /// Below this many columns there is no width worth splitting, so the art is
-    /// dropped and the info pane gets the whole terminal.
+    /// Below this, drop the art and give the info pane the whole terminal.
     const MIN_SPLIT_WIDTH: usize = 40;
 
-    /// Share of the terminal the info pane may claim before its values start
-    /// being truncated instead of stealing more room from the art.
+    /// Share the info pane may claim before values get truncated instead.
     const INFO_WIDTH_SHARE: usize = 45;
 
-    /// Fit the art into whatever space the info pane does not need.
-    ///
-    /// `max_h` is the caller's row budget for the whole pane, not the terminal
-    /// height — the interactive session keeps most of the screen for output.
-    ///
-    /// `wanted` caps how many frames are scaled. Scaling is the expensive half
-    /// of building a layout, and a caller that draws one still frame has no use
-    /// for the other eight.
+    /// Fit the art into whatever the info pane does not need. `max_h` is the
+    /// pane's row budget, not the terminal height. `wanted` caps how many frames
+    /// get scaled, since a still drawing has no use for the rest.
     fn build(fetch: &Fetch<'a>, cols: u16, max_h: usize, wanted: usize) -> Self {
         let &Fetch { animation, cfg, title, items } = fetch;
         let w = cols as usize;
 
         let (frames, art_w) = if w < Self::MIN_SPLIT_WIDTH {
-            // One empty frame rather than none, so `phase % len` indexing stays
-            // valid without a special case.
+            // One empty frame, so `phase % len` needs no special case.
             (vec![Vec::new()], 0)
         } else {
             let widest = items
@@ -253,9 +225,7 @@ impl<'a> Layout<'a> {
                 .max()
                 .unwrap_or(0);
 
-            // A single long value — a CPU model is usually the culprit — would
-            // otherwise squeeze the art down to an unrecognisable blob. Cap what
-            // the info pane can claim and let `compose` ellipsise the overflow.
+            // A long CPU model would otherwise squeeze the art to a blob.
             let info_w = widest.min(w * Self::INFO_WIDTH_SHARE / 100);
 
             let max_w = cfg.width(w.saturating_sub(info_w + cfg.gap).max(8));
@@ -280,14 +250,12 @@ impl<'a> Layout<'a> {
         Self::build(fetch, cols, fetch.cfg.height(Split::budget(rows)), usize::MAX)
     }
 
-    /// Layout for a one-off drawing that owns the whole terminal but for the
-    /// row the shell prompt will land on.
+    /// Owns the whole terminal but the row the shell prompt lands on.
     pub fn full_screen(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
         Self::build(fetch, cols, fetch.cfg.height(rows.saturating_sub(1) as usize), usize::MAX)
     }
 
-    /// The same geometry as [`Self::full_screen`], but only the frame a static
-    /// drawing will actually use.
+    /// Like [`Self::full_screen`], but only the one frame a still will use.
     pub fn still(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
         Self::build(fetch, cols, fetch.cfg.height(rows.saturating_sub(1) as usize), 1)
     }
@@ -317,9 +285,8 @@ impl Split {
     /// Rows the scrolling area needs before splitting is worth it at all.
     const MIN_SCROLL_ROWS: usize = 4;
 
-    /// Share of the screen the fetch may claim. The rest is where you actually
-    /// work, so the art gets the smaller half — a pane sized to fill the
-    /// terminal would leave only a few unusable lines for command output.
+    /// Share the fetch may claim. The art gets the smaller half; the rest is
+    /// where you actually work.
     const PANE_HEIGHT_SHARE: usize = 55;
 
     /// Row budget for the pane on a terminal of `rows` rows.
@@ -330,8 +297,7 @@ impl Split {
             .max(1)
     }
 
-    /// `None` on a terminal too short to usefully divide, in which case the
-    /// fetch is skipped and the whole screen behaves as a plain prompt.
+    /// `None` when the terminal is too short to usefully divide.
     fn new(pane_lines: usize, rows: u16) -> Option<Self> {
         let max_pane = (rows as usize).checked_sub(Self::MIN_SCROLL_ROWS + 1)?;
         let pane_h = pane_lines.min(max_pane);
@@ -344,14 +310,9 @@ impl Split {
     }
 }
 
-/// The interactive session: fetch pinned above, prompt and command output
-/// scrolling below.
+/// The interactive session: fetch above, prompt and output scrolling below.
 ///
-/// The pinning is the terminal's own doing. Setting a scroll region (DECSTBM)
-/// tells it never to scroll the top rows, so output can pour into the lower
-/// part of the screen indefinitely without us redrawing the art on top of it.
-/// We only repaint the pane to advance the animation.
-///
+/// The terminal does the pinning. We only repaint to advance the animation.
 /// Returns the exit status of the last command run.
 fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
     let cfg = fetch.cfg;
@@ -370,9 +331,7 @@ fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
     let mut phase = 0usize;
     let mut status = 0u8;
 
-    // The prompt is only rewritten when it changes; the animation above it
-    // redraws constantly, and reprinting an unchanged line would make the
-    // cursor visibly stutter.
+    // Reprinting an unchanged prompt makes the cursor visibly stutter.
     let mut prompt_dirty = true;
 
     'session: loop {
@@ -387,26 +346,21 @@ fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
             prompt_dirty = false;
         }
 
-        // Handle every event that arrives before the next frame is due. Waiting
-        // on the *remaining* time — rather than sleeping a fixed amount and
-        // polling once — is what makes typing feel immediate at low frame
-        // rates, and keeps the frame clock from drifting as rendering costs
-        // vary.
+        // Waiting on the *remaining* time, not a fixed sleep, is what makes
+        // typing feel immediate at low frame rates.
         while let Some(remaining) = next_frame.checked_duration_since(Instant::now()) {
             if !event::poll(remaining)? {
                 break;
             }
 
             match event::read()? {
-                // Terminals may report press *and* release; acting on both
-                // would double every keystroke.
+                // Terminals may report release too, doubling every keystroke.
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     match prompt.handle(key) {
                         Action::Continue => prompt_dirty = true,
                         Action::Quit => break 'session,
                         Action::Submit(command) => {
-                            // Leave the command in scrollback the way a shell
-                            // does, then move below it for whatever it prints.
+                            // Leave it in scrollback the way a shell does.
                             write!(stdout, "\r{CLEAR_LINE}{}{command}\r\n", prompt.prefix())?;
                             stdout.flush()?;
 
@@ -415,8 +369,7 @@ fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
                                 None => break 'session,
                             }
 
-                            // A child may have drawn anywhere, including over
-                            // the pane; assume the worst and repaint it.
+                            // The child may have drawn over the pane.
                             pane.invalidate();
                             prompt_dirty = true;
                             next_frame = Instant::now() + interval;
@@ -434,16 +387,14 @@ fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
                 _ => continue,
             }
 
-            // Something visible changed. Go back to the top to redraw now,
-            // without advancing the animation: the frame is not due yet.
+            // Redraw now, but don't advance: the frame isn't due yet.
             continue 'session;
         }
 
         phase = phase.wrapping_add(1);
         next_frame += interval;
 
-        // If the process was suspended or the terminal stalled, we may be many
-        // intervals behind. Resync instead of racing to catch up.
+        // Many intervals behind after a suspend. Resync, don't catch up.
         let now = Instant::now();
         if next_frame < now {
             next_frame = now + interval;
@@ -484,9 +435,8 @@ fn execute(
         });
     }
 
-    // Hand the terminal over so the child behaves as it would under a shell:
-    // cooked mode, visible cursor, all three streams inherited. The scroll
-    // region stays set, which is what keeps its output below the fetch.
+    // Cooked mode and a visible cursor, so the child behaves normally. The
+    // region stays set, keeping its output below the fetch.
     guard.suspend()?;
     let status = prompt::run(command);
     guard.resume()?;
@@ -499,8 +449,8 @@ fn execute(
     }))
 }
 
-/// Clear the screen, establish the scroll region, and park the cursor inside
-/// it. Also used on resize, where the geometry has to be rebuilt from scratch.
+/// Clear, set the scroll region, park the cursor inside it. Also used on
+/// resize, where the geometry is rebuilt from scratch.
 fn enter_split(
     out: &mut impl Write,
     layout: &Layout<'_>,
@@ -511,8 +461,7 @@ fn enter_split(
 
     write!(out, "{}", term::CLEAR_SCREEN)?;
     match &split {
-        // Setting a scroll region homes the cursor, so move into the region
-        // explicitly afterwards rather than relying on where it landed.
+        // Setting a region homes the cursor, so move in explicitly.
         Some(s) => write!(
             out,
             "{}{}",
@@ -526,17 +475,11 @@ fn enter_split(
     Ok(split)
 }
 
-/// Animate where the cursor already is, then leave the last frame behind.
+/// Animate in place, then leave the last frame behind. The shell-startup form.
 ///
-/// This is the shell-startup form. Two properties make it safe there, and both
-/// come from what it does *not* do:
-///
-/// * It never enters raw mode, so anything typed during the intro stays in the
-///   kernel's line buffer and arrives at your real prompt instead of being
-///   swallowed here.
-/// * It never clears the screen or positions absolutely. Space is reserved by
-///   printing blank lines, exactly as any ordinary command's output would, so
-///   scrollback above it survives.
+/// Safe there because of what it avoids: no raw mode, so anything you type
+/// reaches your real prompt, and no clearing or absolute positioning, so
+/// scrollback survives. Space is reserved by printing blank lines.
 fn play(fetch: &Fetch<'_>) -> io::Result<()> {
     let cfg = fetch.cfg;
     let (cols, rows) = term::size();
@@ -548,15 +491,13 @@ fn play(fetch: &Fetch<'_>) -> io::Result<()> {
     }
 
     let mut stdout = io::stdout();
-    // Reserve the rows first: this scrolls the terminal if needed, and after
-    // moving back up, redrawing in place can never scroll again — which is what
-    // lets save/restore-cursor stay valid for the whole animation.
+    // Reserve rows first, so redrawing in place can never scroll again and
+    // save/restore-cursor stays valid throughout.
     write!(stdout, "{}\x1b[{height}A{}", "\n".repeat(height), term::HIDE_CURSOR)?;
 
     let result = animate_in_place(&mut stdout, &layout, cfg, height);
 
-    // Restore the cursor whatever happened, then step below the art so the
-    // shell prompt lands after it rather than on top of it.
+    // Step below the art so the shell prompt lands after it.
     write!(stdout, "{}\x1b[{height}B\r", term::SHOW_CURSOR)?;
     stdout.flush()?;
     result
@@ -576,8 +517,7 @@ fn animate_in_place(
     while Instant::now() < deadline {
         let lines = render::compose(&layout.scene(phase), cfg);
 
-        // One buffer, one write, cursor saved and restored around it — the same
-        // discipline the interactive pane uses, for the same reason.
+        // One buffer, one write, same discipline as the interactive pane.
         let mut buf = String::with_capacity(height * 96);
         buf.push_str("\x1b7");
         for (i, line) in lines.iter().enumerate() {
@@ -602,9 +542,7 @@ fn animate_in_place(
     Ok(())
 }
 
-/// Non-interactive output: one static frame, no raw mode, no clearing.
-///
-/// This is what runs when stdout is a pipe, and what `--once` forces.
+/// One static frame, no raw mode, no clearing. Runs when piped, or on `--once`.
 fn draw_once(fetch: &Fetch<'_>) -> io::Result<()> {
     let (cols, rows) = term::size();
     let layout = Layout::still(fetch, cols, rows);
@@ -617,8 +555,7 @@ fn draw_once(fetch: &Fetch<'_>) -> io::Result<()> {
     out.flush()
 }
 
-/// Command-line overrides. Anything settable here is also settable in the
-/// config file; these exist for one-off experiments.
+/// Command-line overrides, for one-off experiments. All also live in config.
 #[derive(Default)]
 struct Args {
     animation: Option<String>,
@@ -727,7 +664,7 @@ impl Args {
 }
 
 const HELP: &str = "\
-animfetch — animated system fetch with a live prompt
+animfetch: animated system fetch with a live prompt
 
 Usage: animfetch [OPTIONS]
 

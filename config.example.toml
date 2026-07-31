@@ -1,6 +1,6 @@
 # animfetch configuration.
 #
-# Copy to ~/.config/animfetch/config.toml. Every key is optional — anything you
+# Copy to ~/.config/animfetch/config.toml. Every key is optional; anything you
 # leave out keeps its default, and an unreadable file falls back to defaults
 # with a warning rather than refusing to start.
 
@@ -11,7 +11,7 @@
 # silently falling back.
 animation = "cat-run"
 
-# Frames per second. Clamped to 1–120.
+# Frames per second. Clamped to 1-120.
 fps = 12.0
 
 # Largest box, in cells, the art may occupy. It scales to fit inside both while
@@ -33,7 +33,7 @@ play_seconds = 3.0
 #   quad  Four samples per cell in a 2x2 grid (▘▝▖▗▚▞…). Twice the resolution
 #         of half in both directions, for art with fine detail.
 #   ramp  One sample per cell, mapped onto `ramp` below by density. Use it for
-#         a classic ASCII look — but note the shaded blocks are stipple
+#         a classic ASCII look, but note the shaded blocks are stipple
 #         patterns in most fonts, which reads as noise along edges.
 style = "half"
 
@@ -53,8 +53,8 @@ value  = "#c8ccd4"   # values
 
 # Where the three colours above come from.
 #
-#   "config"  – exactly as written above (default)
-#   "palette" – look them up in whatever file themes your desktop, so the fetch
+#   "config"   exactly as written above (default)
+#   "palette"  look them up in whatever file themes your desktop, so the fetch
 #               follows your wallpaper. Anything the file does not define keeps
 #               the value above, so this can only add colour, never remove it.
 #

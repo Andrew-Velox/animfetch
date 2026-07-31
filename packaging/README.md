@@ -1,7 +1,7 @@
 # Packaging
 
 How animfetch gets to people who do not have a Rust toolchain. Nothing in here
-is needed to build or run it — see the main README for that.
+is needed to build or run it; see the main README for that.
 
 The three pieces fit together in one direction:
 
@@ -19,7 +19,7 @@ step.
 Two things are missing, and both block the AUR:
 
 - **A LICENSE file.** A repository without one is "all rights reserved" by
-  default, which means nobody can legally redistribute it — and Arch requires
+  default, which means nobody can legally redistribute it, and Arch requires
   the licence text to be installed with the package. Pick a licence, commit it
   as `LICENSE`, set `license=()` in both PKGBUILDs to match, and uncomment the
   `install -Dm644 LICENSE` line in each `package()`.
@@ -50,7 +50,8 @@ curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install
 
 ## Publishing to the AUR
 
-Only you can do this — it needs your AUR account and SSH key. Once, per package:
+Only you can do this, since it needs your AUR account and SSH key. Once per
+package:
 
 ```sh
 # Register the SSH key you use for the AUR at https://aur.archlinux.org/
@@ -69,8 +70,8 @@ git push
 ```
 
 `animfetch-git` is the same flow with no `updpkgsums` step, and it works without
-a release existing — worth putting up first if you want something installable
-today.
+a release existing, so it is worth putting up first if you want something
+installable today.
 
 For each later version: bump `pkgver`, `updpkgsums`, regenerate `.SRCINFO`,
 commit, push.

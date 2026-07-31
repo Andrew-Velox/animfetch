@@ -1,20 +1,11 @@
-//! Animation frames: loading, and resampling to whatever size the terminal is.
+//! Animation frames: loading, and resampling to the terminal's size.
 //!
-//! Source art is stored as plain text, one file per frame, all frames sharing a
-//! common canvas so poses stay registered. We read it as a *coverage* grid
-//! (ink / no ink) rather than keeping the original characters, which is what
-//! lets us rescale to any size.
+//! Art is plain text, one file per frame, read as a coverage grid rather than as
+//! characters, which is what lets us rescale it.
 //!
-//! Two ways of turning coverage back into glyphs, because they fail differently:
-//!
-//! * [`Ink::Half`] takes two vertical samples per cell and draws them with half
-//!   blocks. Twice the vertical detail, and every glyph is a solid shape, so
-//!   edges stay crisp and small holes — an eye, a gap between legs — survive as
-//!   holes rather than being smeared.
-//! * [`Ink::Ramp`] takes one sample per cell and picks a character by density.
-//!   Good for a classic ASCII look, but the shaded block characters it defaults
-//!   to are stipple patterns in most fonts, which reads as noise on edges, and
-//!   averaging fills small holes in.
+//! [`Ink::Half`] uses half blocks: solid glyphs, crisp edges, small holes
+//! survive. [`Ink::Ramp`] picks by density for a classic ASCII look, but shaded
+//! blocks are stipple patterns in most fonts and read as noise.
 
 use std::fs;
 use std::io;
@@ -23,8 +14,7 @@ use std::path::Path;
 /// The animation used when nothing else is configured.
 pub const DEFAULT_NAME: &str = "cat-run";
 
-/// Animations compiled into the binary, so a fresh install has art without
-/// needing any files on disk. Frames are ordered as listed.
+/// Compiled in, so a fresh install has art. Frames run in the order listed.
 const BUNDLED: &[(&str, &[&str])] = &[
     (
         "cat-run",
@@ -97,9 +87,8 @@ pub struct Frame {
     width: usize,
     height: usize,
     ink: Vec<bool>,
-    /// Blank cells fully enclosed by ink — an eye, a nostril — as opposed to
-    /// the background outside the figure. These are part of the drawing, and
-    /// are preserved rather than averaged. See [`Frame::enclosed_holes`].
+    /// Blank cells enclosed by ink (an eye, a nostril) rather than background.
+    /// Part of the drawing, so preserved rather than averaged.
     hole: Vec<bool>,
 }
 
@@ -108,8 +97,7 @@ impl Frame {
         let height = text.lines().count();
         let width = text.lines().map(|line| line.chars().count()).max().unwrap_or(0);
 
-        // Written straight into the rectangle rather than into a row of vectors
-        // that is then copied; short lines are left as the blanks they pad with.
+        // Straight into the rectangle; short lines keep their padding.
         let mut ink = vec![false; width * height];
         for (y, line) in text.lines().enumerate() {
             let row = &mut ink[y * width..(y + 1) * width];
@@ -122,18 +110,15 @@ impl Frame {
         Self { width, height, ink, hole }
     }
 
-    /// Blank cells that cannot be reached from the border without crossing ink.
-    ///
-    /// Flood filling the background inward is what separates a deliberate hole
-    /// from ordinary empty space: a gap between two legs opens onto the border
-    /// and is background, an eye does not and is not.
+    /// Blank cells unreachable from the border. Flooding inward is what tells a
+    /// deliberate hole from empty space: a gap between legs opens out, an eye
+    /// doesn't.
     fn enclosed_holes(ink: &[bool], width: usize, height: usize) -> Vec<bool> {
         if width == 0 || height == 0 {
             return Vec::new();
         }
 
-        // Every blank cell reachable from the border is background. Seed the
-        // frontier with the border itself, then flood inward.
+        // Seed with the border, then flood inward.
         let border = (0..width)
             .flat_map(|x| [x, (height - 1) * width + x])
             .chain((0..height).flat_map(|y| [y * width, y * width + width - 1]));
@@ -161,12 +146,8 @@ impl Frame {
         hole
     }
 
-    /// Smallest enclosed region treated as a deliberate feature.
-    ///
-    /// Hand-drawn art picks up isolated single-cell gaps, and since a hole
-    /// forces its whole output cell blank, keeping those would punch visible
-    /// speckles into a solid body. Anything drawn on purpose — an eye is six
-    /// cells in the bundled art — clears this comfortably.
+    /// Smallest region treated as a deliberate feature. Stray single-cell gaps
+    /// would punch speckles into a solid body. An eye is six cells.
     const MIN_HOLE_CELLS: usize = 2;
 
     /// Erase enclosed regions smaller than [`Self::MIN_HOLE_CELLS`].
@@ -201,15 +182,9 @@ impl Frame {
         }
     }
 
-    /// Fraction of the source block mapping to cell `(ox, oy)` that is inked.
-    ///
-    /// An enclosed hole anywhere in the block forces the result to 0.0. Without
-    /// that, a hole only a couple of source cells wide survives or vanishes
-    /// depending on how it happens to straddle the output grid — which, across
-    /// an animation, makes it flicker in and out from frame to frame.
-    ///
-    /// Works in both directions: when upscaling, the block is a single source
-    /// cell and the result is simply 0.0 or 1.0.
+    /// Fraction of the source block for cell `(ox, oy)` that is inked. A hole
+    /// anywhere forces 0.0, otherwise it flickers as the art moves across the
+    /// output grid. Works upscaling too, where the block is one source cell.
     fn coverage(&self, ox: usize, oy: usize, out_w: usize, out_h: usize) -> f32 {
         let (x0, x1) = span(ox, out_w, self.width);
         let (y0, y1) = span(oy, out_h, self.height);
@@ -250,10 +225,8 @@ impl Frame {
     fn cell(&self, ox: usize, oy: usize, out_w: usize, out_h: usize, ink: Ink<'_>) -> char {
         match ink {
             Ink::Half => {
-                // Each cell is two stacked samples, so the sample grid is twice
-                // as tall as the cell grid. Samples end up square — a character
-                // cell is about twice as tall as it is wide — which is why this
-                // needs no change to the aspect ratio maths in `fit`.
+                // Two stacked samples per cell, which come out square, so
+                // `fit` needs no aspect correction.
                 let rows = out_h * 2;
                 let solid = |y: usize| self.coverage(ox, y, out_w, rows) >= 0.5;
 
@@ -288,32 +261,25 @@ impl Frame {
 /// How coverage is turned back into characters.
 #[derive(Clone, Copy)]
 pub enum Ink<'a> {
-    /// Two vertical samples per cell, drawn with half blocks. Crisp, and twice
-    /// the vertical resolution.
+    /// Two vertical samples per cell. Crisp, twice the vertical resolution.
     Half,
-    /// Four samples per cell in a 2x2 grid, drawn with quadrant blocks. Twice
-    /// the resolution of `Half` in *both* directions, which is what it takes to
-    /// hold on to a detail only a couple of source columns wide.
+    /// 2x2 samples per cell. Double `Half` in both directions, which is what a
+    /// detail two source columns wide needs.
     Quad,
     /// One sample per cell, mapped onto a density ramp by coverage.
     Ramp(&'a [char]),
 }
 
-/// Quadrant glyphs indexed by the four samples as bits, most significant
-/// first: top-left, top-right, bottom-left, bottom-right.
+/// Indexed by the four samples as bits: TL, TR, BL, BR.
 const QUADRANTS: [char; 16] = [
     ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟', '▘', '▚', '▌', '▙', '▀', '▜', '▛', '█',
 ];
 
-/// The orthogonal neighbours of cell `i`, clipped at the grid edges.
-///
-/// Both flood fills below walk the grid this way; four-connectivity is what
-/// makes a diagonal touch *not* count as an opening, so a hole bounded only
-/// diagonally stays a hole.
+/// Orthogonal neighbours of `i`, clipped at the edges. Four-connectivity means
+/// a diagonal touch isn't an opening, so a diagonally bounded hole stays one.
 fn neighbors(i: usize, width: usize, height: usize) -> impl Iterator<Item = usize> {
     let (x, y) = (i % width, i / width);
-    // The two backward steps are lazy because they underflow at the edge they
-    // are guarded against; the forward ones cannot and so are eager.
+    // Backward steps are lazy: they underflow at the edge they guard.
     [
         (x > 0).then(|| i - 1),
         (x + 1 < width).then_some(i + 1),
@@ -331,7 +297,7 @@ fn span(i: usize, out_len: usize, src_len: usize) -> (usize, usize) {
     (start, end.max(start + 1))
 }
 
-/// A loaded animation: every frame on a shared canvas.
+/// A loaded animation, every frame on a shared canvas.
 pub struct Animation {
     pub frames: Vec<Frame>,
     /// Canvas size, used to preserve aspect ratio when fitting to the terminal.
@@ -346,19 +312,16 @@ impl Animation {
             return None;
         }
 
-        // Frames are authored on one canvas, but be forgiving if they are not.
+        // Authored on one canvas, but be forgiving if they are not.
         let width = frames.iter().map(|f| f.width).max().unwrap_or(0);
         let height = frames.iter().map(|f| f.height).max().unwrap_or(0);
 
         Some(Self { frames, width, height })
     }
 
-    /// Load `name`, preferring a directory on disk over the bundled copy.
-    ///
-    /// A user folder shadows a bundled animation of the same name, so the
-    /// built-in art can be replaced without touching the binary. An unknown
-    /// name is an error rather than a fallback: silently substituting different
-    /// art would hide a typo, which is easy to miss once several are installed.
+    /// Load `name`, preferring a directory on disk over the bundled copy, so
+    /// built-in art can be replaced. An unknown name errors rather than falling
+    /// back, since a silent substitution would hide a typo.
     pub fn load(dir: Option<&Path>, name: &str) -> io::Result<Self> {
         if let Some(dir) = dir {
             let path = dir.join(name);
@@ -384,15 +347,12 @@ impl Animation {
         ))
     }
 
-    /// Largest `(width, height)` that fits inside the given box while keeping
-    /// the canvas aspect ratio. Terminal cells are already accounted for by the
-    /// art itself, which is authored for a character grid.
+    /// Largest size fitting the box, aspect ratio kept. Cell shape is already
+    /// baked into art authored for a character grid.
     pub fn fit(&self, max_w: usize, max_h: usize) -> (usize, usize) {
         let by_width = max_w as f32 / self.width as f32;
         let by_height = max_h as f32 / self.height as f32;
-        // Capped at 1:1 — upscaling a coverage mask only produces chunkier
-        // blocks, never more detail, so a huge terminal gets the art at its
-        // authored size rather than a blown-up version of it.
+        // Capped at 1:1: upscaling a mask gives chunkier blocks, not detail.
         let scale = by_width.min(by_height).min(1.0);
 
         let w = ((self.width as f32 * scale).round() as usize).clamp(1, max_w.max(1));
@@ -409,10 +369,8 @@ pub struct Entry {
     pub path: Option<std::path::PathBuf>,
 }
 
-/// Every animation available, sorted by name.
-///
-/// A directory shadows a bundled animation of the same name, matching what
-/// `load` does — the listing must agree with what you would actually get.
+/// Every animation available, sorted by name. Directories shadow bundled art
+/// here too, so the listing agrees with what `load` would give you.
 pub fn list(dir: Option<&Path>) -> Vec<Entry> {
     let mut entries: Vec<Entry> = BUNDLED
         .iter()
@@ -447,8 +405,7 @@ pub fn list(dir: Option<&Path>) -> Vec<Entry> {
     entries
 }
 
-/// Read every `.txt` in `dir` in filename order. Sorting is what defines frame
-/// order, so zero-padded names (`01.txt`) matter.
+/// Every `.txt` in `dir`, sorted. Sorting defines frame order, so zero-pad.
 fn read_frame_dir(dir: &Path) -> io::Result<Vec<String>> {
     let mut paths: Vec<_> = fs::read_dir(dir)?
         .filter_map(Result::ok)
@@ -468,8 +425,7 @@ mod tests {
 
     #[test]
     fn spans_are_never_empty() {
-        // Upscaling maps several output cells onto one source cell; each must
-        // still resolve to a real sample rather than a zero-width range.
+        // Upscaling maps several output cells onto one source cell.
         for out in 1..40usize {
             for src in 1..40usize {
                 for i in 0..out {
@@ -496,8 +452,7 @@ mod tests {
 
     #[test]
     fn thin_stroke_survives_downscaling() {
-        // A one-cell diagonal on an 8x8 canvas. Nearest-neighbour sampling
-        // would drop most of it; coverage averaging must keep every row inked.
+        // Nearest-neighbour would drop most of this diagonal.
         let mut rows = vec![vec!['.'; 8]; 8];
         for (i, row) in rows.iter_mut().enumerate() {
             row[i] = '#';
@@ -544,9 +499,7 @@ mod tests {
 
     #[test]
     fn quadrants_keep_a_hole_half_blocks_would_lose() {
-        // A hole two source columns wide, rendered into cells each covering
-        // four source columns: only the doubled horizontal resolution of Quad
-        // can still represent it.
+        // Two source columns wide into four-column cells: needs Quad.
         let mut rows = vec![vec!['#'; 32]; 8];
         for row in rows.iter_mut() {
             row[12] = ' ';
@@ -598,9 +551,8 @@ mod tests {
 
     #[test]
     fn a_hole_survives_every_alignment_against_the_output_grid() {
-        // The regression this guards: a two-cell hole whose position shifts by
-        // one column per frame. Under plain averaging it appears in some frames
-        // and is swallowed in others, which reads as flicker.
+        // A hole that shifts a column per frame. Plain averaging makes it
+        // appear in some frames and vanish in others, which reads as flicker.
         for offset in 0..12 {
             let mut rows = vec![vec!['#'; 40]; 9];
             for row in rows.iter_mut().take(6).skip(3) {
@@ -623,8 +575,7 @@ mod tests {
 
     #[test]
     fn a_hole_stays_a_hole_instead_of_becoming_a_shade() {
-        // An eye: a small gap inside a solid body. Averaging turns it into a
-        // mid-ramp character; thresholding keeps it blank.
+        // Averaging turns an eye into a mid-ramp char; thresholding keeps it.
         let mut rows = vec![vec!['#'; 12]; 8];
         for row in rows.iter_mut().take(5).skip(2) {
             row[4] = ' ';
@@ -700,8 +651,7 @@ mod tests {
     ) -> bool {
         component.iter().any(|&(x, y)| {
             let (ox, oy) = (x * w / frame.width, y * h / frame.height);
-            // A row shorter than `ox` had its trailing blanks trimmed, so the
-            // cell is blank — which counts as visible.
+            // A short row was trimmed, so the cell is blank: still visible.
             out.get(oy)
                 .is_none_or(|line| line.chars().nth(ox).is_none_or(|c| c != '█'))
         })
@@ -709,9 +659,7 @@ mod tests {
 
     #[test]
     fn no_bundled_frame_loses_its_holes_at_any_usable_size() {
-        // The flicker this guards against: holes surviving in some frames of an
-        // animation and being swallowed in others, purely because of how each
-        // pose happens to line up with the output grid.
+        // Holes surviving in some poses and not others reads as flicker.
         for (name, _) in BUNDLED {
             let anim = Animation::load(None, name).unwrap();
 
@@ -741,9 +689,7 @@ mod tests {
 
     #[test]
     fn an_unknown_animation_is_an_error_not_a_silent_cat() {
-        // Deliberately a name no animation will ever have — an earlier version
-        // of this test used "fox-run", which then got bundled and made it pass
-        // for the wrong reason.
+        // An earlier version used "fox-run", which then got bundled.
         let missing = "no-such-animation";
         let Err(err) = Animation::load(None, missing) else {
             panic!("a typo must not silently resolve to the bundled art");

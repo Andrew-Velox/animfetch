@@ -1,20 +1,9 @@
-//! Pinning the fetch above your own shell.
+//! Pinning the fetch above your own shell, keeping its history and aliases.
 //!
-//! The interactive mode owns the prompt, which costs you your shell's history,
-//! completion, and aliases. This mode does not: it sets up a scroll region,
-//! detaches into the background, and paints the top rows while your real shell
-//! runs underneath in the region below.
-//!
-//! Three things make that safe to do from a separate process:
-//!
-//! * The scroll region means the terminal never scrolls the pane's rows, so the
-//!   shell's output cannot disturb the art and the art never has to be redrawn
-//!   because of scrolling.
-//! * Each frame is a single write bracketed by save/restore cursor, so it
-//!   cannot interleave with the shell's own output or move the cursor you are
-//!   typing at.
-//! * Painting pauses whenever something other than the shell holds the
-//!   terminal. That is what keeps the cat off the top of `vim`.
+//! Safe from a separate process because: the scroll region means our rows are
+//! never scrolled, each frame is one write bracketed by save/restore cursor,
+//! and painting pauses when something other than the shell holds the terminal.
+//! That last one is what keeps the cat off the top of `vim`.
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -29,12 +18,8 @@ const RESIZE_POLL: Duration = Duration::from_millis(500);
 /// Set up the screen, then detach and animate until the terminal goes away.
 pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
     if live_owner()?.is_some() {
-        // Another instance already owns this terminal — a nested shell, most
-        // likely. Two of them would paint different frames into the same rows.
-        //
-        // Silently, and not as an error: this runs from a shell startup file,
-        // where a line of output every time you open a subshell is the kind of
-        // noise that gets a tool removed.
+        // A nested shell, most likely. Silent because this runs from an rc
+        // file, where noise on every subshell gets a tool uninstalled.
         return Ok(());
     }
 
@@ -45,15 +30,11 @@ pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
         return Err(io::Error::other("terminal too short to pin a fetch"));
     };
 
-    // The shell's pgid, captured before forking: our own parent is the shell,
-    // and after the fork the child's parent is init.
-    //
-    // SAFETY: both calls only read process state and cannot fail meaningfully.
+    // Captured before forking, while our parent is still the shell.
+    // SAFETY: both calls only read process state.
     let shell_pgid = unsafe { libc::getpgid(libc::getppid()) };
 
-    // Do the screen setup here, in the process the shell is waiting on, so the
-    // region exists before it prints its next prompt. Doing it after the fork
-    // would race the prompt and leave it above the region.
+    // Before the fork, so the region exists before the shell's next prompt.
     let mut stdout = io::stdout();
     write!(
         stdout,
@@ -65,38 +46,26 @@ pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
     )?;
     stdout.flush()?;
 
-    // The shell's pid, so the daemon can notice when its terminal is gone.
     // SAFETY: getppid only reads process state.
     let shell_pid = unsafe { libc::getppid() };
 
-    // SAFETY: single-threaded at this point, so the child inherits no locks it
-    // could deadlock on.
+    // SAFETY: single-threaded here, so the child inherits no locks.
     match unsafe { libc::fork() } {
         -1 => return Err(io::Error::last_os_error()),
         0 => {}                    // child: fall through and animate
         _ => return Ok(()),        // parent: hand the terminal back to the shell
     }
 
-    // Leave the shell's process group.
-    //
-    // Terminal-generated signals — SIGINT from Ctrl-C, SIGQUIT, SIGTSTP — go to
-    // every process in the foreground group. Started from a shell startup file
-    // we are *in* that group, because the shell runs rc commands without
-    // forking a separate job, so a single Ctrl-C at the prompt would kill the
-    // animation. Our own group keeps those signals where they belong.
-    //
-    // The session is deliberately left alone: `setsid` would drop the
-    // controlling terminal, and `tcgetpgrp` needs it.
-    //
-    // SAFETY: setpgid on self with a new group is always valid here; we are not
-    // a session leader.
+    // Leave the shell's group, or a Ctrl-C at its prompt kills the animation.
+    // Not `setsid`: that drops the controlling terminal, which `tcgetpgrp` needs.
+    // SAFETY: valid on self here, since we are not a session leader.
     unsafe { libc::setpgid(0, 0) };
 
     write_pid_file()?;
     let result = animate(fetch, shell_pgid, shell_pid);
     let _ = std::fs::remove_file(pid_path()?);
 
-    // The terminal is usually already gone by here; resetting is best effort.
+    // Usually already gone by here, so best effort.
     let _ = write!(
         io::stdout(),
         "{}{}",
@@ -113,7 +82,7 @@ pub fn stop() -> io::Result<bool> {
         return Ok(false);
     };
 
-    // SAFETY: `pid` came from our own pid file and was just confirmed alive.
+    // SAFETY: `pid` came from our pid file and was just confirmed alive.
     unsafe { libc::kill(pid, libc::SIGTERM) };
     let _ = std::fs::remove_file(pid_path()?);
 
@@ -139,10 +108,7 @@ fn animate(
     let mut stdout = io::stdout();
     let mut pane = Pane::new().with_origin_mode();
 
-    // Colours are the one thing that can change under a pinned fetch, when the
-    // wallpaper is rethemed. `cfg` still decides everything about geometry;
-    // this copy carries only the colours, and is re-resolved when the palette
-    // file is rewritten.
+    // Only colours can change under a pinned fetch. `cfg` still owns geometry.
     let mut theme = cfg.clone();
     let mut palette = palette::Watch::new(cfg);
 
@@ -153,17 +119,12 @@ fn animate(
     let interval = cfg.frame_interval();
     let mut phase = 0usize;
     let mut next_resize_check = Instant::now() + RESIZE_POLL;
-    // Whether the shell held the terminal last frame, so we can tell when a
-    // command has just finished and the region may need re-asserting.
+    // So we can tell when a command just finished.
     let mut had_terminal = true;
 
     loop {
-        // Now that terminal signals no longer reach us, nothing will tell us to
-        // stop — so notice for ourselves when there is nothing left to paint
-        // on. A failed write catches it too, but only while we are painting,
-        // and we stop painting once the shell is gone.
-        //
-        // SAFETY: signal 0 performs the permission check without delivering.
+        // Nothing signals us any more, so notice the shell leaving ourselves.
+        // SAFETY: signal 0 checks permission without delivering.
         if unsafe { libc::kill(shell_pid, 0) } != 0 {
             return Ok(());
         }
@@ -176,8 +137,7 @@ fn animate(
 
         if holds_terminal {
             if !had_terminal {
-                // A full-screen program may have reset the scroll region on its
-                // way out. Re-assert it, and repaint what it drew over.
+                // A full-screen program may have reset the region on exit.
                 let top = split.as_ref().map_or(1, |s| s.scroll_top);
                 reassert_region(&mut stdout, top, rows)?;
                 pane.invalidate();
@@ -185,8 +145,7 @@ fn animate(
 
             if let Some(split) = &split {
                 let lines = render::compose(&layout.scene(phase), &theme);
-                // A failed write means the terminal is gone; that is our cue to
-                // stop, not an error worth reporting to nobody.
+                // A failed write means the terminal is gone.
                 if pane.paint(&mut stdout, &lines, split.pane_h).is_err() {
                     return Ok(());
                 }
@@ -198,8 +157,7 @@ fn animate(
         if Instant::now() >= next_resize_check {
             next_resize_check = Instant::now() + RESIZE_POLL;
 
-            // Rethemed since the last check: take the new colours and repaint,
-            // rather than showing the palette from whenever this was started.
+            // Rethemed since the last check; take the new colours.
             if palette.changed() {
                 crate::palette::apply(&mut theme);
                 pane.invalidate();
@@ -222,26 +180,21 @@ fn animate(
     }
 }
 
-/// Re-establish the scroll region without disturbing the cursor.
-///
-/// Setting a region homes the cursor as a side effect, so it is bracketed with
-/// save/restore — the shell's cursor must come back exactly where it was.
+/// Re-establish the scroll region. Bracketed with save/restore because setting
+/// a region homes the cursor, and the shell's must come back where it was.
 fn reassert_region(out: &mut impl Write, top: u16, rows: u16) -> io::Result<()> {
     write!(out, "\x1b7{}{}\x1b8", term::scroll_region(top, rows), term::SET_ORIGIN_MODE)
 }
 
 /// The process group currently holding the terminal, or -1 if we have none.
 fn foreground_group() -> libc::pid_t {
-    // SAFETY: reads terminal state only, and reports failure by return value.
+    // SAFETY: reads terminal state only.
     unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) }
 }
 
-/// Pid file for this terminal, so one instance can find another.
-///
-/// Keyed by the terminal device rather than by user: one pinned fetch per
-/// terminal is the unit that makes sense, and nested shells share a device.
+/// Pid file keyed by terminal device, so nested shells find each other.
 fn pid_path() -> io::Result<PathBuf> {
-    // SAFETY: ttyname returns a pointer to a static buffer, or null.
+    // SAFETY: ttyname returns a static buffer or null.
     let name = unsafe {
         let raw = libc::ttyname(libc::STDIN_FILENO);
         if raw.is_null() {
@@ -272,13 +225,11 @@ fn live_owner() -> io::Result<Option<libc::pid_t>> {
         return Ok(None);
     };
 
-    // Signal 0 tests for existence without delivering anything.
-    //
-    // SAFETY: kill with signal 0 has no effect beyond the permission check.
+    // SAFETY: signal 0 tests existence without delivering anything.
     if unsafe { libc::kill(pid, 0) } == 0 {
         Ok(Some(pid))
     } else {
-        // Stale file from a terminal that went away without cleaning up.
+        // Stale file from a terminal that went away.
         let _ = std::fs::remove_file(&path);
         Ok(None)
     }

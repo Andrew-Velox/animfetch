@@ -23,7 +23,7 @@ conflicts=("$_pkgname")
 source_x86_64=("$_pkgname-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/$_pkgname-v$pkgver-x86_64-unknown-linux-musl.tar.gz")
 source_aarch64=("$_pkgname-$pkgver-aarch64.tar.gz::$url/releases/download/v$pkgver/$_pkgname-v$pkgver-aarch64-unknown-linux-musl.tar.gz")
 # SKIP only until the first release exists. Once it does, run `updpkgsums` here
-# to pin the real checksums — an AUR package that skips them gives whoever
+# to pin the real checksums. An AUR package that skips them gives whoever
 # installs it no way to notice a tampered download.
 sha256sums_x86_64=('SKIP')
 sha256sums_aarch64=('SKIP')

@@ -3,7 +3,7 @@ name = "animfetch"
 version = "0.1.0"
 edition = "2024"
 # Let chains, which the loading and terminal-size paths both use. Stated so an
-# older toolchain fails with a version error rather than a syntax one — the
+# older toolchain fails with a version error rather than a syntax one. The
 # README tells people 1.88, and this is what enforces it.
 rust-version = "1.88"
 repository = "https://github.com/Andrew-Velox/animfetch"

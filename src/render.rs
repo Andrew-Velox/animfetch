@@ -1,16 +1,10 @@
 //! Frame composition and painting.
 //!
-//! Two separate concerns live here:
-//!
-//! * `compose` turns art + info + prompt into a flat `Vec<String>` of finished,
-//!   already-coloured lines. It does no I/O.
-//! * `Screen` paints such a vector, rewriting only the lines that differ from
-//!   the previous frame. Clearing the whole screen every frame — which is what
-//!   most animated fetchers do — is the usual source of flicker and of wasted
-//!   bytes on a slow link.
+//! `compose` builds finished, coloured lines and does no I/O. `Pane` paints
+//! them, rewriting only what changed. Clearing the screen every frame, which is
+//! what most animated fetchers do, is the usual source of flicker.
 
-// Both traits provide `write!`; the anonymous import keeps `Write` unambiguous
-// while still allowing formatting into a String.
+// Anonymous import: both traits provide `write!`.
 use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::io::{self, Write};
@@ -21,10 +15,8 @@ use crate::color::{RESET, Rgb};
 use crate::config::Config;
 use crate::fetch::Item;
 
-/// Display width of `s`, ignoring any SGR escape sequences it contains.
-///
-/// Needed because several strings here carry their own colour, so a plain
-/// `width()` would count escape bytes as visible columns.
+/// Display width of `s`, ignoring SGR escapes. A plain `width()` would count
+/// escape bytes as visible columns.
 pub fn visible_width(s: &str) -> usize {
     let mut width = 0;
     let mut chars = s.chars();
@@ -70,8 +62,7 @@ enum Row<'a> {
     Raw(&'a str),
 }
 
-/// Everything that varies between frames, gathered so `compose` does not grow
-/// a long positional parameter list that is easy to call wrongly.
+/// Everything that varies between frames, so `compose` takes one argument.
 #[derive(Clone, Copy)]
 pub struct Scene<'a> {
     /// Pre-scaled art rows for this frame.
@@ -82,28 +73,22 @@ pub struct Scene<'a> {
     pub items: &'a [Item],
     /// Frame counter, used to scroll the gradient.
     pub phase: usize,
-    /// Terminal width. Anything wider is truncated rather than wrapped, since a
-    /// wrapped line would desynchronise the whole diff.
+    /// Terminal width. Wider content is truncated; wrapping breaks the diff.
     pub width: usize,
 }
 
-/// Build the fetch pane: art on the left, info on the right.
-///
-/// The prompt is not part of this. It lives below the pane in the terminal's
-/// scroll region, where it is drawn and scrolled by the shell loop rather than
-/// composed into a fixed row here.
+/// Build the fetch pane: art on the left, info on the right. The prompt isn't
+/// part of it; that lives below, in the scroll region.
 pub fn compose(scene: &Scene<'_>, cfg: &Config) -> Vec<String> {
     let &Scene { art, art_w, title, items, phase, width: avail_w } = scene;
 
     let rows = info_rows(title, items, cfg);
 
-    // The gap only separates two panes; with no art there is nothing to
-    // separate, so the info should not sit needlessly indented.
+    // No art means nothing to separate, so no indent.
     let info_col = if art_w == 0 { 0 } else { art_w + cfg.gap };
     let info_w = avail_w.saturating_sub(info_col);
 
-    // Centre the shorter pane against the taller one so the art and the text
-    // stay visually balanced instead of both hugging the top.
+    // Centre the shorter pane against the taller one.
     let height = art.len().max(rows.len());
     let art_top = (height - art.len()) / 2;
     let info_top = (height - rows.len()) / 2;
@@ -111,8 +96,7 @@ pub fn compose(scene: &Scene<'_>, cfg: &Config) -> Vec<String> {
     let mut out = Vec::with_capacity(height + 2);
 
     for y in 0..height {
-        // Sized for the visible columns plus the handful of SGR sequences a row
-        // carries, so a line is built without reallocating as it grows.
+        // Room for the columns plus the row's SGR sequences, so no realloc.
         let mut line = String::with_capacity(avail_w + 64);
 
         let art_row = y.checked_sub(art_top).and_then(|i| art.get(i));
@@ -122,8 +106,7 @@ pub fn compose(scene: &Scene<'_>, cfg: &Config) -> Vec<String> {
 
         let info_row = y.checked_sub(info_top).and_then(|i| rows.get(i));
         if let Some(row) = info_row {
-            // Pad from the art's *visible* width; the string also holds escape
-            // sequences, which occupy no columns.
+            // Pad from the art's visible width; escapes occupy no columns.
             let drawn = art_row.map_or(0, |r| r.width());
             for _ in drawn..info_col {
                 line.push(' ');
@@ -146,8 +129,7 @@ fn info_rows<'a>(title: &'a str, items: &'a [Item], cfg: &Config) -> Vec<Row<'a>
 
     for item in items {
         if item.label.is_empty() {
-            // Pre-coloured rows (the palette swatches) are pure decoration and
-            // have nothing to show once colour is off.
+            // Swatches are pure decoration; nothing to show without colour.
             if cfg.color {
                 rows.push(Row::Raw(&item.value));
             }
@@ -169,8 +151,7 @@ fn paint_art_row(out: &mut String, row: &str, y: usize, height: usize, cfg: &Con
         return;
     }
 
-    // Position within the gradient, optionally advanced by the frame counter so
-    // the ramp appears to flow downward through the art.
+    // Advanced by the frame counter so the ramp flows down through the art.
     let span = height.max(1);
     let offset = if cfg.gradient_scroll { phase } else { 0 };
     let t = ((y + offset) % span) as f32 / span as f32;
@@ -219,10 +200,7 @@ fn paint_info_row(out: &mut String, row: &Row<'_>, cfg: &Config, width: usize) {
 }
 
 /// Cut `s` to `width` display columns, marking the cut with an ellipsis.
-///
-/// Borrows when nothing has to be cut, which is the usual case and is reached
-/// twice per info row on every frame — an allocation each, for a string that
-/// would have been copied out unchanged.
+/// Borrows when nothing is cut, which is twice per info row per frame.
 fn truncate(s: &str, width: usize) -> Cow<'_, str> {
     if s.width() <= width {
         return Cow::Borrowed(s);
@@ -245,20 +223,13 @@ fn truncate(s: &str, width: usize) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-/// Incremental painter for the pinned fetch pane.
-///
-/// Holds the previously drawn frame so it can rewrite only what changed, and
-/// leaves the cursor exactly where it found it — the prompt lives below the
-/// pane, and the user is typing at it while these frames are being drawn.
+/// Incremental painter for the pinned pane. Rewrites only changed lines and
+/// leaves the cursor where it found it, since the user is typing below.
 pub struct Pane {
     prev: Vec<String>,
     needs_clear: bool,
-    /// Whether the caller has origin mode set on the terminal.
-    ///
-    /// This pane addresses rows absolutely, but origin mode makes row numbers
-    /// relative to the scroll region — which would place the art *inside* the
-    /// region it is supposed to sit above. When set, each frame turns origin
-    /// mode off for its own duration and puts it back.
+    /// Origin mode makes rows relative to the scroll region, which would put
+    /// the art inside it. When set, each frame turns it off and back on.
     origin_mode: bool,
 }
 
@@ -266,9 +237,7 @@ pub struct Pane {
 const SAVE_CURSOR: &str = "\x1b7";
 const RESTORE_CURSOR: &str = "\x1b8";
 
-/// Synchronized output: terminals that understand it present the frame in one
-/// go instead of mid-paint, which removes any chance of a visible tear. Those
-/// that do not simply ignore both sequences.
+/// Synchronized output: the frame lands in one go, so it cannot tear.
 const BEGIN_SYNC: &str = "\x1b[?2026h";
 const END_SYNC: &str = "\x1b[?2026l";
 
@@ -284,17 +253,13 @@ impl Pane {
         self
     }
 
-    /// Force a full repaint. Required after a resize, and after any child
-    /// process that may have drawn over the pane.
+    /// Force a full repaint, after a resize or a child that drew over us.
     pub fn invalidate(&mut self) {
         self.needs_clear = true;
     }
 
-    /// Draw `lines` into rows `1..=height`.
-    ///
-    /// The whole frame is assembled into a single buffer and issued as one
-    /// write, so it cannot be interleaved with anything else writing to the
-    /// terminal.
+    /// Draw `lines` into rows `1..=height`, as one write so nothing can
+    /// interleave with it.
     pub fn paint(&mut self, out: &mut impl Write, lines: &[String], height: usize) -> io::Result<()> {
         let visible = lines.len().min(height);
         let mut buf = String::with_capacity(visible * 96);
@@ -306,8 +271,7 @@ impl Pane {
         }
 
         if self.needs_clear {
-            // Clear only the pane's own rows. Wiping the whole screen would
-            // take the command output below it too.
+            // Only our rows; a full clear would take the output below too.
             for y in 0..height {
                 let _ = write!(buf, "\x1b[{};1H\x1b[2K", y + 1);
             }
@@ -319,8 +283,7 @@ impl Pane {
             if self.prev.get(y).is_some_and(|p| p == line) {
                 continue;
             }
-            // Absolute positioning per line; never rely on the cursor having
-            // ended up where the previous write left it.
+            // Absolute per line; never trust where the last write left it.
             let _ = write!(buf, "\x1b[{};1H\x1b[2K{line}", y + 1);
         }
 
@@ -397,9 +360,7 @@ mod tests {
 
     #[test]
     fn info_pane_starts_at_a_fixed_column_regardless_of_art_row() {
-        // Art rows have their trailing blanks trimmed, so padding has to be
-        // computed rather than assumed — this is what keeps the info pane from
-        // jittering as the animation plays.
+        // Trailing blanks are trimmed, so padding has to be computed.
         let cfg = plain_cfg();
         let art = vec!["####".to_string(), "#".to_string()];
         let items = vec![
@@ -448,8 +409,7 @@ mod tests {
 
     #[test]
     fn paint_leaves_the_cursor_where_it_found_it() {
-        // The user is typing at a prompt below the pane while these frames are
-        // drawn; a frame that moved the cursor would scatter their input.
+        // A frame that moved the cursor would scatter what the user types.
         let mut screen = Pane::new();
         let mut buf = Vec::new();
         screen.paint(&mut buf, &["a".into()], 10).unwrap();
@@ -461,8 +421,7 @@ mod tests {
 
     #[test]
     fn origin_mode_is_suspended_for_the_paint_and_restored() {
-        // Absolute row addressing is only absolute with origin mode off; the
-        // art would otherwise be drawn inside the very region it sits above.
+        // Absolute addressing needs origin mode off.
         let mut pane = Pane::new().with_origin_mode();
         let mut buf = Vec::new();
         pane.paint(&mut buf, &["a".into()], 4).unwrap();

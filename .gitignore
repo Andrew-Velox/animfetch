@@ -7,8 +7,8 @@
 # rustfmt backups
 **/*.rs.bk
 
-# Machine-specific tool settings, not project configuration
-.claude/settings.local.json
+# Machine-specific editor and tool settings, not project configuration
+.claude/
 
 # Editors
 .vscode/

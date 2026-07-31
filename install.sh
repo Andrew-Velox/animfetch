@@ -89,8 +89,8 @@ fetch "$base/$name.tar.gz" "$tmp/$name.tar.gz" ||
   Check that $version exists and has binaries attached:
   https://github.com/$REPO/releases"
 
-# Not fatal if the checksum file is missing — an early release may not have one
-# — but a checksum that is present and wrong stops the install.
+# Not fatal if the checksum file is missing, since an early release may not
+# have one, but a checksum that is present and wrong stops the install.
 if fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null &&
 	[ -s "$tmp/SHA256SUMS" ] &&
 	command -v sha256sum >/dev/null 2>&1; then
