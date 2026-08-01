@@ -11,9 +11,15 @@ variables.
 
 ## Install
 
-Either method works on any Linux distribution.
+### Arch Linux
 
-### Prebuilt binary
+```sh
+paru -S animfetch-bin      # or: yay -S animfetch-bin
+```
+
+The prebuilt binary. `animfetch-git` builds the latest commit from source instead.
+
+### Any Linux
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
