@@ -6,15 +6,11 @@
 
 pkgname=animfetch-bin
 _pkgname=animfetch
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc='Animated system fetch that stays pinned above your shell while you work'
 arch=('x86_64' 'aarch64')
 url='https://github.com/Andrew-Velox/animfetch'
-# TODO: add a LICENSE file to the repository and set this to match it. Arch
-# requires the text of a non-standard licence to be installed with the package,
-# so the AUR will reject this until both this field and the `install` line in
-# package() are real. See the note in packaging/README.md.
 license=('MIT')
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
@@ -22,9 +18,7 @@ conflicts=("$_pkgname")
 # Static musl builds, so no depends=() at all.
 source_x86_64=("$_pkgname-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/$_pkgname-v$pkgver-x86_64-unknown-linux-musl.tar.gz")
 source_aarch64=("$_pkgname-$pkgver-aarch64.tar.gz::$url/releases/download/v$pkgver/$_pkgname-v$pkgver-aarch64-unknown-linux-musl.tar.gz")
-# SKIP only until the first release exists. Once it does, run `updpkgsums` here
-# to pin the real checksums. An AUR package that skips them gives whoever
-# installs it no way to notice a tampered download.
+# Refresh with `updpkgsums` on every version bump.
 sha256sums_x86_64=('SKIP')
 sha256sums_aarch64=('SKIP')
 
@@ -38,7 +32,6 @@ package() {
 		"$pkgdir/usr/share/$_pkgname/config.example.toml"
 	install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"
 
-	# Uncomment once the release tarballs carry a LICENSE file. Required before
-	# this can go to the AUR.
-	# install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	# MIT carries a copyright line, so Arch wants the text installed.
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

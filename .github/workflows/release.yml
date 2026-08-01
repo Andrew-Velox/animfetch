@@ -73,7 +73,7 @@ jobs:
           name=animfetch-${GITHUB_REF_NAME}-${{ matrix.target }}
           mkdir -p "dist/$name"
           cp target/${{ matrix.target }}/release/animfetch "dist/$name/"
-          cp README.md config.example.toml "dist/$name/"
+          cp README.md config.example.toml LICENSE "dist/$name/"
           tar -C dist -czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
 

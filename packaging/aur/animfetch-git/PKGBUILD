@@ -11,10 +11,6 @@ pkgrel=1
 pkgdesc='Animated system fetch that stays pinned above your shell while you work'
 arch=('x86_64' 'aarch64')
 url='https://github.com/Andrew-Velox/animfetch'
-# TODO: add a LICENSE file to the repository and set this to match it. Arch
-# requires the text of a non-standard licence to be installed with the package,
-# so the AUR will reject this until both this field and the `install` line in
-# package() are real. See the note in packaging/README.md.
 license=('MIT')
 # A native build links the system C runtime, unlike the static musl binaries the
 # release workflow produces. namcap on the built package is what catches these.
@@ -61,8 +57,6 @@ package() {
 		"$pkgdir/usr/share/$_pkgname/config.example.toml"
 	install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"
 
-	# Uncomment once the repository has a LICENSE file. Required before this can
-	# go to the AUR; left out rather than in so that the package still builds
-	# today.
-	# install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	# MIT carries a copyright line, so Arch wants the text installed.
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
