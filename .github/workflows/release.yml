@@ -108,12 +108,47 @@ jobs:
 
       # `gh` is preinstalled on the runner, so this needs no third-party action
       # holding a token that can write to the repository.
+      # Quoted heredoc so backticks stay literal, then substitute the version.
+      - name: Write release notes
+        run: |
+          cat > notes.md <<'EOF'
+          Animated system fetch that stays pinned above your shell while you work.
+
+          ## Install
+
+          Arch Linux:
+
+          ```sh
+          paru -S animfetch-bin
+          ```
+
+          Any Linux, static binary, no Rust needed:
+
+          ```sh
+          curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
+          ```
+
+          ## Binaries
+
+          Static musl builds. They run on any distribution regardless of its glibc
+          version. Check a download against `SHA256SUMS`.
+
+          | File | For |
+          | --- | --- |
+          | `animfetch-__VER__-x86_64-unknown-linux-musl.tar.gz` | Intel and AMD 64-bit |
+          | `animfetch-__VER__-aarch64-unknown-linux-musl.tar.gz` | ARM 64-bit |
+          EOF
+          sed -i "s/__VER__/${GITHUB_REF_NAME}/g" notes.md
+          cat notes.md
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
             --generate-notes \
             dist/* \
-          || gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          || { gh release upload "$GITHUB_REF_NAME" dist/* --clobber; \
+               gh release edit "$GITHUB_REF_NAME" --notes-file notes.md; }
