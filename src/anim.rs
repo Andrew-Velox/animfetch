@@ -19,16 +19,17 @@ const BUNDLED: &[(&str, &[&str])] = &[
     (
         "cat-run",
         &[
+            include_str!("../assets/anim/cat-run/00.txt"),
             include_str!("../assets/anim/cat-run/01.txt"),
             include_str!("../assets/anim/cat-run/02.txt"),
             include_str!("../assets/anim/cat-run/03.txt"),
             include_str!("../assets/anim/cat-run/04.txt"),
-            include_str!("../assets/anim/cat-run/05.txt"),
         ],
     ),
     (
         "cat-tail",
         &[
+            include_str!("../assets/anim/cat-tail/00.txt"),
             include_str!("../assets/anim/cat-tail/01.txt"),
             include_str!("../assets/anim/cat-tail/02.txt"),
             include_str!("../assets/anim/cat-tail/03.txt"),
@@ -36,12 +37,12 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/cat-tail/05.txt"),
             include_str!("../assets/anim/cat-tail/06.txt"),
             include_str!("../assets/anim/cat-tail/07.txt"),
-            include_str!("../assets/anim/cat-tail/08.txt"),
         ],
     ),
     (
         "fox-run",
         &[
+            include_str!("../assets/anim/fox-run/00.txt"),
             include_str!("../assets/anim/fox-run/01.txt"),
             include_str!("../assets/anim/fox-run/02.txt"),
             include_str!("../assets/anim/fox-run/03.txt"),
@@ -49,12 +50,12 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/fox-run/05.txt"),
             include_str!("../assets/anim/fox-run/06.txt"),
             include_str!("../assets/anim/fox-run/07.txt"),
-            include_str!("../assets/anim/fox-run/08.txt"),
         ],
     ),
     (
         "dolphin-run",
         &[
+            include_str!("../assets/anim/dolphin-run/00.txt"),
             include_str!("../assets/anim/dolphin-run/01.txt"),
             include_str!("../assets/anim/dolphin-run/02.txt"),
             include_str!("../assets/anim/dolphin-run/03.txt"),
@@ -63,12 +64,12 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/dolphin-run/06.txt"),
             include_str!("../assets/anim/dolphin-run/07.txt"),
             include_str!("../assets/anim/dolphin-run/08.txt"),
-            include_str!("../assets/anim/dolphin-run/09.txt"),
         ],
     ),
     (
         "blackhole",
         &[
+            include_str!("../assets/anim/blackhole/00.txt"),
             include_str!("../assets/anim/blackhole/01.txt"),
             include_str!("../assets/anim/blackhole/02.txt"),
             include_str!("../assets/anim/blackhole/03.txt"),
@@ -77,7 +78,54 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/blackhole/06.txt"),
             include_str!("../assets/anim/blackhole/07.txt"),
             include_str!("../assets/anim/blackhole/08.txt"),
-            include_str!("../assets/anim/blackhole/09.txt"),
+        ],
+    ),
+    (
+        "butterfly",
+        &[
+            include_str!("../assets/anim/butterfly/00.txt"),
+            include_str!("../assets/anim/butterfly/01.txt"),
+            include_str!("../assets/anim/butterfly/02.txt"),
+            include_str!("../assets/anim/butterfly/03.txt"),
+            include_str!("../assets/anim/butterfly/04.txt"),
+            include_str!("../assets/anim/butterfly/05.txt"),
+            include_str!("../assets/anim/butterfly/06.txt"),
+            include_str!("../assets/anim/butterfly/07.txt"),
+            include_str!("../assets/anim/butterfly/08.txt"),
+            include_str!("../assets/anim/butterfly/09.txt"),
+            include_str!("../assets/anim/butterfly/10.txt"),
+            include_str!("../assets/anim/butterfly/11.txt"),
+            include_str!("../assets/anim/butterfly/12.txt"),
+            include_str!("../assets/anim/butterfly/13.txt"),
+            include_str!("../assets/anim/butterfly/14.txt"),
+            include_str!("../assets/anim/butterfly/15.txt"),
+        ],
+    ),
+    (
+        "icosahedron",
+        &[
+            include_str!("../assets/anim/icosahedron/00.txt"),
+            include_str!("../assets/anim/icosahedron/01.txt"),
+            include_str!("../assets/anim/icosahedron/02.txt"),
+            include_str!("../assets/anim/icosahedron/03.txt"),
+            include_str!("../assets/anim/icosahedron/04.txt"),
+            include_str!("../assets/anim/icosahedron/05.txt"),
+            include_str!("../assets/anim/icosahedron/06.txt"),
+            include_str!("../assets/anim/icosahedron/07.txt"),
+            include_str!("../assets/anim/icosahedron/08.txt"),
+            include_str!("../assets/anim/icosahedron/09.txt"),
+            include_str!("../assets/anim/icosahedron/10.txt"),
+            include_str!("../assets/anim/icosahedron/11.txt")
+        ],
+    ),
+    (
+        "rabbit-run",
+        &[
+            include_str!("../assets/anim/rabbit-run/00.txt"),
+            include_str!("../assets/anim/rabbit-run/01.txt"),
+            include_str!("../assets/anim/rabbit-run/02.txt"),
+            include_str!("../assets/anim/rabbit-run/03.txt"),
+            include_str!("../assets/anim/rabbit-run/04.txt"),
         ],
     ),
 ];
