@@ -1,43 +1,56 @@
 name: Validate Markdown & Count LOC
 
-# Run this workflow on every push and pull request
 on: [push, pull_request]
+
+# git-auto-commit-action pushes back to the repo, which the default read-only
+# token cannot do.
+permissions:
+  contents: write
 
 jobs:
   check-code:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Check out the code of the current repository
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Install Rust (usually pre-installed on ubuntu-latest, but this ensures it's up to date)
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # 3. Download and compile YOUR tool directly from its GitHub repository
       - name: Install my_github_cli
         run: cargo install --git https://github.com/Andrew-Velox/my_github_cli.git
 
-      # 4. Run your tool to check Markdown links
       - name: Validate Markdown Files
         run: my_github_cli --ext md .
 
-      # 5. Capture LOC output and inject it into README
       - name: Update README with LOC
         run: |
-          # Run your tool and save the output to a variable
-          LOC_STATS=$(my_github_cli --loc .)
-          
-          # Export the variable so perl can read it safely
-          export LOC_STATS
-          
-          # Use perl to replace everything between your hidden tags with the new stats
-          perl -0777 -pi -e 's/(<!-- loc-start -->\n).*?(\n<!-- loc-end -->)/$1$ENV{LOC_STATS}$2/s' README.md
+          # --ext matters: it defaults to "." which matches nothing, so leaving
+          # it off counts zero lines. The tool also prints a banner and the whole
+          # link report, so take only the number.
+          LOC=$(my_github_cli --ext rs --loc . | grep -oP 'Total lines of code:\s*\K\d+')
+          if [ -z "$LOC" ]; then
+            echo "::error::could not parse a line count out of my_github_cli"
+            exit 1
+          fi
 
-      # 6. Commit and push the changes back to the repo
+          export LOC_STATS="**$LOC** lines of Rust."
+
+          # Deliberately not anchored to newlines. The markers sit on consecutive
+          # lines, and requiring one between them is what stopped this matching.
+          perl -0777 -pi -e \
+            's/(<!-- loc-start -->).*?(<!-- loc-end -->)/$1\n$ENV{LOC_STATS}\n$2/s' README.md
+
+          if git diff --quiet README.md; then
+            echo "::warning::README unchanged; are the loc-start/loc-end markers present?"
+          else
+            git diff README.md
+          fi
+
+      # Only on push: a pull_request from a fork cannot be written back to.
       - name: Commit changes
+        if: github.event_name == 'push'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "docs: update lines of code stats"
