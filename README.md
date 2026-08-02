@@ -1,15 +1,11 @@
 # animfetch
 
-An animated system fetch you can work inside. The fetch stays pinned at the top
-of the screen and keeps animating while your prompt and command output scroll
-below it.
+An animated system fetch you can work inside. The art stays pinned at the top of
+the screen while your prompt and command output scroll below it. Linux only.
 
 ![animfetch running with a pinned fetch above a working shell](.github/assets/animfetch-demo.gif)
 
-Linux only. All system data comes from `/proc`, `/sys`, and environment
-variables.
-
-## animations
+## Animations
 
 |   |   |   |   |   |
 |:---:|:---:|:---:|:---:|:---:|
@@ -18,17 +14,15 @@ variables.
 |butterfly|icosahedron|rabbit-run|mew|yin-yang|
 | ![](.github/assets/butterfly.gif) | ![](.github/assets/icosahedron.gif) | ![](.github/assets/rabbit-run.gif) | ![](.github/assets/mew.gif) | ![](.github/assets/yin-yang.gif) |
 
-Pick one with `-a <name>`, or make it the default with `--set <name>`.
+Pick one with `-a <name>`, or set the default with `--set <name>`.
 
 ## Install
 
 ### Arch Linux
 
 ```sh
-paru -S animfetch-bin      # or: yay -S animfetch-bin
+paru -S animfetch-bin      # or animfetch-git to build from source
 ```
-
-The prebuilt binary. `animfetch-git` builds the latest commit from source instead.
 
 ### Any Linux
 
@@ -36,23 +30,16 @@ The prebuilt binary. `animfetch-git` builds the latest commit from source instea
 curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
 ```
 
-Static binary, so no Rust and no dependencies. It goes to `~/.local/bin`, or
-`/usr/local/bin` as root. Set `ANIMFETCH_BINDIR` to override. If you'd rather
-read the script before running it, download it first. It's short.
-
-You can also grab a tarball from the [latest release][releases] and put the
-binary wherever you like.
+Static binary, no Rust needed. Goes to `~/.local/bin`, or `/usr/local/bin` as
+root; `ANIMFETCH_BINDIR` overrides. Tarballs are on the [releases page][releases].
 
 ### From source
-
-Needs Rust 1.88 or newer.
 
 ```sh
 cargo install --locked --git https://github.com/Andrew-Velox/animfetch
 ```
 
-Installs to `~/.cargo/bin`. Update with `--force`, remove with
-`cargo uninstall animfetch`.
+Needs Rust 1.88 or newer.
 
 [releases]: https://github.com/Andrew-Velox/animfetch/releases/latest
 
@@ -65,49 +52,39 @@ animfetch --once     # print one static frame and exit
 animfetch            # interactive: animfetch owns the prompt
 ```
 
-`--pin` is the one you probably want. It sets a scroll region so the terminal
-never scrolls the top rows, then detaches into the background and paints them.
-Your own shell runs underneath, with its prompt, history, completions and
-aliases all intact. Undo it with `animfetch --unpin`.
-
-Common options:
+`--pin` is the one you want. It sets a scroll region so the top rows never
+scroll, then detaches and paints them while your own shell runs underneath with
+its history, completion and aliases intact. Undo with `animfetch --unpin`.
 
 ```sh
 animfetch -a cat-tail        # different animation, this run only
 animfetch --style quad       # half (default), quad, or ramp
 animfetch --width 40         # cap the art width (0 fills the screen)
-animfetch --height 12        # both caps apply; aspect ratio is kept
+animfetch --height 12        # both caps apply, aspect ratio is kept
 animfetch --fps 20
 animfetch --play -s 1.5      # shorter intro
 animfetch --no-color
 ```
 
-Piping the output drops to the static path automatically, as does `NO_COLOR=1`
-for colour.
+Piping the output, or `NO_COLOR=1`, drops to the static path automatically.
 
 ### In your shell startup
 
-Use `--pin`, `--play`, or `--once`. Never the bare `animfetch`, which waits for
-input and replaces your shell for as long as it runs.
-
-Add one line to `~/.bashrc` or `~/.zshrc`:
+`~/.bashrc` or `~/.zshrc`:
 
 ```sh
 [[ $- == *i* ]] && command -v animfetch >/dev/null && animfetch --pin
 ```
 
-or to `~/.config/fish/config.fish`:
+`~/.config/fish/config.fish`:
 
 ```fish
 status is-interactive; and type -q animfetch; and animfetch --pin
 ```
 
-Both guards are worth keeping. Scripts and `scp` read your startup file too, and
-they break on unexpected output. The second one stops a shell that can't find
-the binary from printing an error on every new terminal.
-
-`--pin` is safe to run for every shell. A second one in a nested shell notices
-the first and exits silently.
+The guards keep it out of scripts and `scp`, which read your startup file too
+and break on unexpected output. Never use bare `animfetch` here, since it waits
+for input. Running `--pin` in every shell is safe: a nested one exits silently.
 
 ## Interactive mode keys
 
@@ -121,95 +98,65 @@ the first and exits silently.
 | `Ctrl-W` | Delete the last word |
 
 `cd` and `exit` are handled internally, everything else runs under `$SHELL -c`.
-So no aliases, no history, no completion. It's a launcher with a prompt, not a
-shell.
+No aliases, no history, no completion: a launcher with a prompt, not a shell.
 
-## Animations
+## Adding your own animation
 
-```sh
-animfetch --list             # what is available (* marks the default)
-animfetch -a blackhole       # use one for this run only
-animfetch --set blackhole    # make it the default, saved to config.toml
-```
-
-```
-$ animfetch --list
-  blackhole     9 frames  built in
-  butterfly    16 frames  built in
-* cat-run       5 frames  built in
-  cat-tail      8 frames  built in
-  dolphin-run   9 frames  built in
-  fox-run       8 frames  built in
-  icosahedron  12 frames  built in
-  mew           8 frames  built in
-  rabbit-run    5 frames  built in
-  yin-yang      9 frames  built in
-  dog-run      12 frames  /home/you/.config/animfetch/anim/dog-run
-```
-
-### Adding your own
-
-Drop plain-text frames into `~/.config/animfetch/anim/<name>/`, one file per
-frame, named so they sort in order (`01.txt`, `02.txt`, `03.txt`). No rebuild
-needed. They're picked up at runtime, and a directory shadows a built-in of the
-same name.
+Drop plain-text frames into `~/.config/animfetch/anim/<name>/`, named so they
+sort in order (`00.txt`, `01.txt`). They are picked up at runtime, and a
+directory shadows a built-in of the same name. `animfetch --list` shows
+everything available.
 
 Three rules for the art:
 
 - Any non-whitespace character counts as ink. Frames are read as a coverage
-  mask, not as characters, so what you draw with doesn't matter.
-- Author every frame on one canvas. Padding is kept as written, and that's what
-  keeps poses registered against each other.
-- Draw silhouettes, not shading. Art converted from an image uses characters as
-  a brightness ramp, and since every one of them is ink, the whole thing comes
-  out as a solid blob. Detail has to be whitespace: an enclosed gap of two cells
-  or more survives scaling, which is how eyes stay eyes.
+  mask, so what you draw with does not matter.
+- Every frame on one canvas, padding kept as written. That is what keeps poses
+  registered against each other.
+- Silhouettes, not shading. Art converted from an image is all ink and comes out
+  a solid blob. Detail has to be whitespace, and an enclosed gap of two cells or
+  more survives scaling.
 
-To compile one into the binary instead, put it under `assets/anim/`, add it to
-the `BUNDLED` table in `src/anim.rs`, then **rebuild and reinstall**:
-
-```sh
-cargo build --release && install -Dm755 target/release/animfetch ~/.local/bin/animfetch
-```
-
-Frames are embedded at compile time, so a new animation won't show up in
-`--list` until you reinstall.
+To bundle one into the binary, put it under `assets/anim/`, add it to the
+`BUNDLED` table in `src/anim.rs`, then rebuild and reinstall.
 
 ## Configuration
 
-Optional, and every key inside it is optional too. A malformed file falls back
-to defaults instead of refusing to start.
-
-Copy [`config.example.toml`][example] to `~/.config/animfetch/config.toml`.
+Optional. Copy [`config.example.toml`][example] to
+`~/.config/animfetch/config.toml`. Every key is optional, and a malformed file
+falls back to defaults rather than refusing to start.
 
 [example]: https://github.com/Andrew-Velox/animfetch/blob/main/config.example.toml
 
 ### Colours from your desktop theme
 
-Instead of fixed colours, animfetch can read whatever file themes the rest of
-your desktop (matugen, pywal, wallust) so the fetch follows your wallpaper.
-
 ```sh
 animfetch --once --palette      # try it without editing anything
 ```
 
-To make it permanent:
-
 ```toml
-color_source = "palette"
+color_source = "palette"        # make it permanent
 ```
 
-It looks for a matugen, pywal or wallust palette in that order, and reads the
-`primary`, `secondary`, `tertiary` and `on_surface` roles by default. Any role
-the file doesn't define keeps the fixed colour from your config, so this can
-only add colour, never take it away. A missing palette file changes nothing at
-all.
+Reads a matugen, pywal or wallust palette, whichever it finds first. Roles the
+file does not define keep the colour from your config, so this can only add
+colour. Under `--pin` the file is re-read when it changes, so retheming your
+desktop recolours the running animation. See the `palette_*` keys in
+`config.example.toml` to point it elsewhere or pick different roles.
 
-Under `--pin` the file is re-read when it changes, so retheming your desktop
-recolours the running animation without restarting it.
+## A note on the prompt
 
-See `palette_files`, `palette_accent`, `palette_value` and `palette_gradient`
-in `config.example.toml` to point it somewhere else or pick different roles.
+Interactive mode draws something that looks like a shell prompt and hands what
+you type to `$SHELL`. That is a keylogger you happen to trust. The whole path is
+in `src/prompt.rs`, short enough to read end to end.
+
+## Credits
+
+Some animations are redrawn as ASCII from [RunCat][runcat] by
+[kyome22][kyome], used under the Apache License 2.0.
+
+[runcat]: https://github.com/kyome22/menubar_runcat
+[kyome]: https://github.com/kyome22
 
 
 <hr>
