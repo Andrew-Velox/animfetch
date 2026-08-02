@@ -214,4 +214,5 @@ in `config.example.toml` to point it somewhere else or pick different roles.
 
 <hr>
 <!-- loc-start -->
+**3974** lines of Rust.
 <!-- loc-end -->
