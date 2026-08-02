@@ -211,13 +211,6 @@ recolours the running animation without restarting it.
 See `palette_files`, `palette_accent`, `palette_value` and `palette_gradient`
 in `config.example.toml` to point it somewhere else or pick different roles.
 
-## A note on the prompt
-
-Interactive mode draws something that looks like a shell prompt, collects what
-you type, and hands it to `$SHELL`. That's a keylogger you happen to trust.
-Fine on your own machine, worth thinking about anywhere else. The whole path is
-in `src/prompt.rs`, short enough to read end to end.
-
 
 <hr>
 <!-- loc-start -->
