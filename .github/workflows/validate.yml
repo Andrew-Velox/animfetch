@@ -1,0 +1,44 @@
+name: Validate Markdown & Count LOC
+
+# Run this workflow on every push and pull request
+on: [push, pull_request]
+
+jobs:
+  check-code:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the code of the current repository
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Install Rust (usually pre-installed on ubuntu-latest, but this ensures it's up to date)
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # 3. Download and compile YOUR tool directly from its GitHub repository
+      - name: Install my_github_cli
+        run: cargo install --git https://github.com/Andrew-Velox/my_github_cli.git
+
+      # 4. Run your tool to check Markdown links
+      - name: Validate Markdown Files
+        run: my_github_cli --ext md .
+
+      # 5. Capture LOC output and inject it into README
+      - name: Update README with LOC
+        run: |
+          # Run your tool and save the output to a variable
+          LOC_STATS=$(my_github_cli --loc .)
+          
+          # Export the variable so perl can read it safely
+          export LOC_STATS
+          
+          # Use perl to replace everything between your hidden tags with the new stats
+          perl -0777 -pi -e 's/(<!-- loc-start -->\n).*?(\n<!-- loc-end -->)/$1$ENV{LOC_STATS}$2/s' README.md
+
+      # 6. Commit and push the changes back to the repo
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: update lines of code stats"
+          file_pattern: README.md

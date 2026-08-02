@@ -217,3 +217,8 @@ Interactive mode draws something that looks like a shell prompt, collects what
 you type, and hands it to `$SHELL`. That's a keylogger you happen to trust.
 Fine on your own machine, worth thinking about anywhere else. The whole path is
 in `src/prompt.rs`, short enough to read end to end.
+
+
+<hr>
+<!-- loc-start -->
+<!-- loc-end -->
