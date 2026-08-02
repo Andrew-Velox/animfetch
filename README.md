@@ -123,11 +123,16 @@ animfetch --set blackhole    # make it the default, saved to config.toml
 
 ```
 $ animfetch --list
-  blackhole    10 frames  built in
-  cat-run       5 frames  built in
-* cat-tail      8 frames  built in
+  blackhole     9 frames  built in
+  butterfly    16 frames  built in
+* cat-run       5 frames  built in
+  cat-tail      8 frames  built in
   dolphin-run   9 frames  built in
   fox-run       8 frames  built in
+  icosahedron  12 frames  built in
+  mew           8 frames  built in
+  rabbit-run    5 frames  built in
+  yin-yang      9 frames  built in
   dog-run      12 frames  /home/you/.config/animfetch/anim/dog-run
 ```
 
@@ -138,12 +143,16 @@ frame, named so they sort in order (`01.txt`, `02.txt`, `03.txt`). No rebuild
 needed. They're picked up at runtime, and a directory shadows a built-in of the
 same name.
 
-Two rules for the art:
+Three rules for the art:
 
 - Any non-whitespace character counts as ink. Frames are read as a coverage
   mask, not as characters, so what you draw with doesn't matter.
 - Author every frame on one canvas. Padding is kept as written, and that's what
   keeps poses registered against each other.
+- Draw silhouettes, not shading. Art converted from an image uses characters as
+  a brightness ramp, and since every one of them is ink, the whole thing comes
+  out as a solid blob. Detail has to be whitespace: an enclosed gap of two cells
+  or more survives scaling, which is how eyes stay eyes.
 
 To compile one into the binary instead, put it under `assets/anim/`, add it to
 the `BUNDLED` table in `src/anim.rs`, then **rebuild and reinstall**:
