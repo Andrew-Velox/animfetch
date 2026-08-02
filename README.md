@@ -9,6 +9,17 @@ below it.
 Linux only. All system data comes from `/proc`, `/sys`, and environment
 variables.
 
+## animations
+
+|   |   |   |   |   |
+|:---:|:---:|:---:|:---:|:---:|
+|cat-run|cat-tail|fox-run|dolphin-run|blackhole|
+| ![](.github/assets/cat-run.gif) | ![](.github/assets/cat-tail.gif) | ![](.github/assets/fox-run.gif) | ![](.github/assets/dolphin-run.gif) | ![](.github/assets/blackhole.gif) |
+|butterfly|icosahedron|rabbit-run|mew|yin-yang|
+| ![](.github/assets/butterfly.gif) | ![](.github/assets/icosahedron.gif) | ![](.github/assets/rabbit-run.gif) | ![](.github/assets/mew.gif) | ![](.github/assets/yin-yang.gif) |
+
+Pick one with `-a <name>`, or make it the default with `--set <name>`.
+
 ## Install
 
 ### Arch Linux
