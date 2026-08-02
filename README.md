@@ -213,6 +213,9 @@ in `config.example.toml` to point it somewhere else or pick different roles.
 
 
 <hr>
+
 <!-- loc-start -->
-**3974** lines of Rust.
+
+![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-3974-orange?style=flat-square)
+
 <!-- loc-end -->

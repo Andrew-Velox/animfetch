@@ -35,12 +35,15 @@ jobs:
             exit 1
           fi
 
-          export LOC_STATS="**$LOC** lines of Rust."
+          export LOC_STATS="![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-$LOC-orange?style=flat-square)"
 
           # Deliberately not anchored to newlines. The markers sit on consecutive
           # lines, and requiring one between them is what stopped this matching.
+          #
+          # The blank lines matter: the markers follow an <hr>, and without a gap
+          # the whole run becomes one HTML block, where Markdown is not parsed.
           perl -0777 -pi -e \
-            's/(<!-- loc-start -->).*?(<!-- loc-end -->)/$1\n$ENV{LOC_STATS}\n$2/s' README.md
+            's/(<!-- loc-start -->).*?(<!-- loc-end -->)/$1\n\n$ENV{LOC_STATS}\n\n$2/s' README.md
 
           if git diff --quiet README.md; then
             echo "::warning::README unchanged; are the loc-start/loc-end markers present?"
