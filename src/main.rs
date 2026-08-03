@@ -311,7 +311,6 @@ impl Split {
 }
 
 /// The interactive session: fetch above, prompt and output scrolling below.
-///
 /// The terminal does the pinning. We only repaint to advance the animation.
 /// Returns the exit status of the last command run.
 fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
