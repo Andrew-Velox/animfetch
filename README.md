@@ -3,7 +3,17 @@
 An animated system fetch you can work inside. The art stays pinned at the top of
 the screen while your prompt and command output scroll below it. Linux only.
 
+
+<div align="center">
+<!-- loc-start -->
+
+![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-3973-orange?style=flat-square)
+
+<!-- loc-end -->
+</div>
+
 ![animfetch running with a pinned fetch above a working shell](.github/assets/animfetch-demo.gif)
+
 
 ## Animations
 
@@ -159,10 +169,3 @@ Some animations are redrawn as ASCII from [RunCat][runcat] by
 [kyome]: https://github.com/kyome22
 
 
-<hr>
-
-<!-- loc-start -->
-
-![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-3973-orange?style=flat-square)
-
-<!-- loc-end -->
