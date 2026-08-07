@@ -228,6 +228,9 @@ fn truncate(s: &str, width: usize) -> Cow<'_, str> {
 pub struct Pane {
     prev: Vec<String>,
     needs_clear: bool,
+    /// Tallest pane painted since the last clear. A resize can shrink the pane,
+    /// and the rows it no longer covers still hold the old art.
+    painted_h: usize,
     /// Origin mode makes rows relative to the scroll region, which would put
     /// the art inside it. When set, each frame turns it off and back on.
     origin_mode: bool,
@@ -243,7 +246,7 @@ const END_SYNC: &str = "\x1b[?2026l";
 
 impl Pane {
     pub fn new() -> Self {
-        Self { prev: Vec::new(), needs_clear: true, origin_mode: false }
+        Self { prev: Vec::new(), needs_clear: true, painted_h: 0, origin_mode: false }
     }
 
     /// Declare that the terminal is in origin mode, so painting can opt out of
@@ -271,11 +274,16 @@ impl Pane {
         }
 
         if self.needs_clear {
+            // Up to the tallest we have ever painted, not just the current
+            // height: a resize can shrink the pane, and the rows it used to
+            // cover still hold art that nothing else will erase.
+            //
             // Only our rows; a full clear would take the output below too.
-            for y in 0..height {
+            for y in 0..height.max(self.painted_h) {
                 let _ = write!(buf, "\x1b[{};1H\x1b[2K", y + 1);
             }
             self.prev.clear();
+            self.painted_h = 0;
             self.needs_clear = false;
         }
 
@@ -300,6 +308,7 @@ impl Pane {
 
         self.prev.clear();
         self.prev.extend_from_slice(&lines[..visible]);
+        self.painted_h = self.painted_h.max(visible);
 
         out.write_all(buf.as_bytes())?;
         out.flush()
@@ -478,6 +487,30 @@ mod tests {
         // Rows 2 and 3 must be explicitly cleared, not left showing stale art.
         assert!(written.contains("\x1b[2;1H\x1b[2K"), "{written:?}");
         assert!(written.contains("\x1b[3;1H\x1b[2K"), "{written:?}");
+    }
+
+    #[test]
+    fn invalidate_erases_rows_a_shrinking_pane_no_longer_covers() {
+        // A resize can leave the pane shorter than it was. Clearing only the
+        // new height left the rows between the two showing old art, which is
+        // what smeared copies of the fetch down the screen on resize.
+        let mut screen = Pane::new();
+        let mut buf = Vec::new();
+
+        let tall: Vec<String> = (0..8).map(|i| format!("row{i}")).collect();
+        screen.paint(&mut buf, &tall, 8).unwrap();
+        buf.clear();
+
+        screen.invalidate();
+        screen.paint(&mut buf, &["only".into()], 1).unwrap();
+        let written = String::from_utf8(buf).unwrap();
+
+        for row in 2..=8 {
+            assert!(
+                written.contains(&format!("\x1b[{row};1H\x1b[2K")),
+                "row {row} was left uncleared: {written:?}"
+            );
+        }
     }
 
     #[test]

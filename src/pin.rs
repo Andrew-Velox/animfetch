@@ -135,6 +135,23 @@ fn animate(
         }
         let holds_terminal = foreground == shell_pgid;
 
+        // Every frame, not on the slow poll. Terminals drop the scroll region
+        // when the window resizes, and until we set it again our absolute rows
+        // scroll with everything else, smearing copies of the art down the
+        // screen. A `size` call is an ioctl on a fd we already hold, so this is
+        // far cheaper than the frame it protects.
+        let (w, h) = term::size();
+        if (w, h) != (cols, rows) {
+            (cols, rows) = (w, h);
+            layout = Layout::pinned(fetch, cols, rows);
+            split = Split::fit(&layout, cfg, rows);
+
+            if let Some(s) = &split {
+                reassert_region(&mut stdout, s.scroll_top, rows)?;
+            }
+            pane.invalidate();
+        }
+
         if holds_terminal {
             if !had_terminal {
                 // A full-screen program may have reset the region on exit.
@@ -160,18 +177,6 @@ fn animate(
             // Rethemed since the last check; take the new colours.
             if palette.changed() {
                 crate::palette::apply(&mut theme);
-                pane.invalidate();
-            }
-
-            let (w, h) = term::size();
-            if (w, h) != (cols, rows) {
-                (cols, rows) = (w, h);
-                layout = Layout::pinned(fetch, cols, rows);
-                split = Split::fit(&layout, cfg, rows);
-
-                if let Some(s) = &split {
-                    reassert_region(&mut stdout, s.scroll_top, rows)?;
-                }
                 pane.invalidate();
             }
         }
