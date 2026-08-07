@@ -1,0 +1,16 @@
+# .github/contributor-mural.yml
+
+# Set the target to fetch stargazers instead of contributors
+target: stargazers
+
+# Configure the output file format and location
+output:
+  file: mural.svg
+  format: svg
+
+# (Optional) Customize the appearance of the avatars
+style:
+  avatar_size: 64
+  columns: 12
+  gap: 10
+  shape: circle
