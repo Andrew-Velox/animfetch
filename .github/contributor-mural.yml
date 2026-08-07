@@ -3,9 +3,10 @@
 
 # Writing a source block is what enables it. `repo:` defaults to this
 # repository, so it is left out.
+# No `group:`, which would draw a "Stargazers" title inside the SVG on top of
+# the README's own heading.
 stargazers:
   max: 100
-  group: Stargazers
 
 style: honeycomb
 
