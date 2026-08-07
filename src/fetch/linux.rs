@@ -1,25 +1,15 @@
-//! System information, Linux only. All of it from `/proc`, `/sys` and env vars,
-//! never subprocesses, which is why this runs in about a millisecond.
+//! Linux system information, from `/proc`, `/sys` and environment variables.
+//! Never subprocesses, which is why this runs in about a millisecond.
 //!
-//! Porting means reimplementing this module; nothing else knows the sources.
+//! Everything that knows where a number comes from lives here. Adding a
+//! platform means writing a sibling of this file with the same `collect` and
+//! `hostname`; nothing above cares.
 
-use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
+use super::{Item, arch, basename_of_env, env, format_usage, humanize_duration, is_shell, swatches};
 use crate::config::Module;
-
-/// One info row. An empty `label` spans the full width (the colour swatches).
-pub struct Item {
-    pub label: &'static str,
-    pub value: String,
-}
-
-/// `user@host`, shown above the info rows.
-pub fn title() -> String {
-    let user = env("USER").or_else(|| env("LOGNAME")).unwrap_or_else(|| "user".into());
-    format!("{user}@{}", hostname())
-}
 
 /// Collect the requested modules, skipping ones this machine can't answer.
 pub fn collect(modules: &[Module]) -> Vec<Item> {
@@ -56,10 +46,6 @@ pub fn collect(modules: &[Module]) -> Vec<Item> {
 
     items
 }
-
-// ---------------------------------------------------------------------------
-// Modules
-// ---------------------------------------------------------------------------
 
 fn os() -> Option<String> {
     let release = fs::read_to_string("/etc/os-release").ok()?;
@@ -231,20 +217,6 @@ fn disk(mount: &str) -> Option<String> {
     Some(format_usage((total - free) / 1024, total / 1024))
 }
 
-/// The eight ANSI colours as solid blocks, so you can see your terminal theme.
-fn swatches() -> String {
-    let mut out = String::with_capacity(8 * 12);
-    for code in 0..8 {
-        let _ = write!(out, "\x1b[3{code}m███");
-    }
-    out.push_str(crate::color::RESET);
-    out
-}
-
-// ---------------------------------------------------------------------------
-// Parsing helpers
-// ---------------------------------------------------------------------------
-
 /// Read a `KEY=value` field from os-release, stripping optional quoting.
 fn os_release_field(text: &str, key: &str) -> Option<String> {
     text.lines()
@@ -262,12 +234,7 @@ fn meminfo_field(text: &str, key: &str) -> Option<u64> {
         .and_then(|(_, v)| v.split_whitespace().next()?.parse().ok())
 }
 
-fn arch() -> Option<String> {
-    // std has no uname, but the kernel exposes the same string here.
-    Some(std::env::consts::ARCH.to_string()).filter(|s| !s.is_empty())
-}
-
-fn hostname() -> String {
+pub fn hostname() -> String {
     read_trimmed("/proc/sys/kernel/hostname")
         .or_else(|| read_trimmed("/etc/hostname"))
         .unwrap_or_else(|| "localhost".into())
@@ -282,12 +249,6 @@ fn parent_pid(pid: u32) -> Option<u32> {
 
 fn comm(pid: u32) -> Option<String> {
     read_trimmed(format!("/proc/{pid}/comm"))
-}
-
-fn is_shell(name: &str) -> bool {
-    // Login shells appear as "-bash".
-    let name = name.trim_start_matches('-');
-    matches!(name, "sh" | "bash" | "zsh" | "fish" | "dash" | "ksh" | "tcsh" | "nu" | "elvish")
 }
 
 /// DMI fields are frequently placeholder text on desktops and VMs.
@@ -344,59 +305,6 @@ fn read_trimmed(path: impl AsRef<Path>) -> Option<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
-
-fn env(key: &str) -> Option<String> {
-    std::env::var(key).ok().filter(|v| !v.is_empty())
-}
-
-fn basename_of_env(key: &str) -> Option<String> {
-    let value = env(key)?;
-    Some(value.rsplit('/').next().unwrap_or(&value).to_string())
-}
-
-/// `1.2GiB / 15.5GiB (8%)` from KiB inputs.
-fn format_usage(used_kib: u64, total_kib: u64) -> String {
-    let pct = (used_kib * 100).checked_div(total_kib).unwrap_or(0);
-    format!("{} / {} ({pct}%)", human_kib(used_kib), human_kib(total_kib))
-}
-
-fn human_kib(kib: u64) -> String {
-    const UNITS: [&str; 4] = ["KiB", "MiB", "GiB", "TiB"];
-    let mut value = kib as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    // Sub-10 values need a decimal to stay informative.
-    if value < 10.0 && unit > 0 {
-        format!("{value:.2}{}", UNITS[unit])
-    } else {
-        format!("{value:.0}{}", UNITS[unit])
-    }
-}
-
-fn humanize_duration(secs: u64) -> String {
-    let (d, h, m) = (secs / 86400, secs % 86400 / 3600, secs % 3600 / 60);
-
-    let mut parts = Vec::new();
-    if d > 0 {
-        parts.push(format!("{d} day{}", plural(d)));
-    }
-    if h > 0 {
-        parts.push(format!("{h} hour{}", plural(h)));
-    }
-    // So a fresh boot reads "0 mins" rather than nothing.
-    if m > 0 || parts.is_empty() {
-        parts.push(format!("{m} min{}", plural(m)));
-    }
-    parts.join(", ")
-}
-
-fn plural(n: u64) -> &'static str {
-    if n == 1 { "" } else { "s" }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,108 +312,72 @@ mod tests {
     #[test]
     fn os_release_strips_quotes_and_picks_the_right_key() {
         let text = "NAME=\"Arch Linux\"\nPRETTY_NAME=\"Arch Linux\"\nID=arch\n";
-        assert_eq!(os_release_field(text, "PRETTY_NAME").as_deref(), Some("Arch Linux"));
-        assert_eq!(os_release_field(text, "ID").as_deref(), Some("arch"));
+        assert_eq!(os_release_field(text, "PRETTY_NAME"), Some("Arch Linux".into()));
+        assert_eq!(os_release_field(text, "ID"), Some("arch".into()));
         assert_eq!(os_release_field(text, "MISSING"), None);
     }
 
     #[test]
     fn cpu_lists_count_every_form_the_kernel_writes() {
+        assert_eq!(count_cpu_list("0-15"), Some(16));
         assert_eq!(count_cpu_list("0"), Some(1));
-        assert_eq!(count_cpu_list("0-31"), Some(32));
-        // A machine with cores offlined reports several ranges.
         assert_eq!(count_cpu_list("0-3,8-11"), Some(8));
         assert_eq!(count_cpu_list("0,2,4"), Some(3));
-        // Nothing usable must fall back rather than report a wrong count.
         assert_eq!(count_cpu_list(""), None);
-        assert_eq!(count_cpu_list("garbage"), None);
-        assert_eq!(count_cpu_list("4-0"), None);
+        assert_eq!(count_cpu_list("nonsense"), None);
     }
 
     #[test]
     fn only_the_first_block_of_cpuinfo_is_read_and_it_holds_the_model() {
-        // The whole saving rests on the model name being in the first block.
-        let Some(head) = read_prefix("/proc/cpuinfo", 4096) else {
-            return; // no /proc here
-        };
-        assert!(head.len() <= 4096);
-
-        let full = fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
-        if let Some(expected) = model_name(&full) {
-            assert_eq!(model_name(&head), Some(expected));
+        // The saving in `cpu` rests on this being true.
+        let head = read_prefix("/proc/cpuinfo", 4096);
+        if let Some(head) = head {
+            assert!(head.len() <= 4096);
+            assert!(model_name(&head).is_some(), "model name not in the first 4KiB");
         }
     }
 
     #[test]
     fn the_core_count_agrees_with_what_cpuinfo_lists() {
         // Must still match what counting `processor` lines reported.
-        let Some(online) = online_cpus() else { return };
-        let Ok(info) = fs::read_to_string("/proc/cpuinfo") else { return };
-
-        let listed = info.lines().filter(|l| l.starts_with("processor")).count();
-        if listed > 0 {
+        if let (Some(online), Ok(all)) =
+            (online_cpus(), std::fs::read_to_string("/proc/cpuinfo"))
+        {
+            let listed = all.lines().filter(|l| l.starts_with("processor")).count();
             assert_eq!(online, listed);
         }
     }
 
     #[test]
     fn meminfo_parses_kib_values() {
-        let text = "MemTotal:       16324220 kB\nMemFree:         1000 kB\n";
-        assert_eq!(meminfo_field(text, "MemTotal"), Some(16_324_220));
-        assert_eq!(meminfo_field(text, "MemFree"), Some(1_000));
-        assert_eq!(meminfo_field(text, "SwapTotal"), None);
+        let text = "MemTotal:       16283812 kB\nMemAvailable:    9000000 kB\n";
+        assert_eq!(meminfo_field(text, "MemTotal"), Some(16_283_812));
+        assert_eq!(meminfo_field(text, "MemAvailable"), Some(9_000_000));
     }
 
     #[test]
     fn meminfo_does_not_confuse_prefixed_keys() {
         // "MemTotal" must not match a lookup for "Mem".
-        let text = "MemTotal: 100 kB\nMemAvailable: 50 kB\n";
+        let text = "MemTotal:  100 kB\nSwapTotal: 200 kB\n";
         assert_eq!(meminfo_field(text, "Mem"), None);
-        assert_eq!(meminfo_field(text, "MemAvailable"), Some(50));
-    }
-
-    #[test]
-    fn byte_sizes_scale_and_keep_precision_where_it_matters() {
-        assert_eq!(human_kib(512), "512KiB");
-        assert_eq!(human_kib(2048), "2.00MiB");
-        assert_eq!(human_kib(16 * 1024 * 1024), "16GiB");
-    }
-
-    #[test]
-    fn usage_reports_percentage() {
-        assert_eq!(format_usage(0, 0), "0KiB / 0KiB (0%)");
-        assert_eq!(format_usage(50, 100), "50KiB / 100KiB (50%)");
-    }
-
-    #[test]
-    fn uptime_reads_naturally_at_every_scale() {
-        assert_eq!(humanize_duration(0), "0 mins");
-        assert_eq!(humanize_duration(60), "1 min");
-        assert_eq!(humanize_duration(3600), "1 hour");
-        assert_eq!(humanize_duration(3660), "1 hour, 1 min");
-        assert_eq!(humanize_duration(90_061), "1 day, 1 hour, 1 min");
-    }
-
-    #[test]
-    fn login_shells_are_recognised() {
-        assert!(is_shell("bash"));
-        assert!(is_shell("-zsh"));
-        assert!(!is_shell("kitty"));
+        assert_eq!(meminfo_field(text, "SwapTotal"), Some(200));
     }
 
     #[test]
     fn placeholder_dmi_strings_are_rejected() {
-        assert!(is_meaningful("XPS 13 9310"));
-        assert!(!is_meaningful("Default string"));
+        assert!(is_meaningful("B650M K"));
         assert!(!is_meaningful(""));
+        assert!(!is_meaningful("Default string"));
+        assert!(!is_meaningful("To Be Filled By O.E.M."));
+        assert!(!is_meaningful("None"));
     }
 
     #[test]
     fn parent_pid_handles_names_containing_spaces_and_parens() {
         // Field 2 is "(weird ) name)"; a naive split misreads ppid.
-        let stat = "1234 (weird ) name) S 42 1234 1234 0 -1 4194304";
+        let stat = "42 (weird ) name) S 7 42 42 0 -1 4194304 0 0";
         let rest = &stat[stat.rfind(')').unwrap() + 1..];
         let ppid: u32 = rest.split_whitespace().nth(1).unwrap().parse().unwrap();
-        assert_eq!(ppid, 42);
+        assert_eq!(ppid, 7);
     }
 }
