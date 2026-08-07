@@ -7,12 +7,11 @@ stargazers:
   max: 100
   group: Stargazers
 
-style: grid
+style: honeycomb
 
-grid:
-  columns: 12
-  avatar_size: 64
-  shape: circle
-  margin: 8
+honeycomb:
+  columns: 10
+  cell_size: 64
+  gap: 4
 
 output: .github/assets/stargazers.svg
