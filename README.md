@@ -160,6 +160,10 @@ Interactive mode draws something that looks like a shell prompt and hands what
 you type to `$SHELL`. That is a keylogger you happen to trust. The whole path is
 in `src/prompt.rs`, short enough to read end to end.
 
+## Stargazers
+
+[![Stargazers](.github/assets/stargazers.svg)](https://github.com/Andrew-Velox/animfetch/stargazers)
+
 ## Credits
 
 Some animations are redrawn as ASCII from [RunCat][runcat] by

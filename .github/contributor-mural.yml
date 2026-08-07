@@ -1,0 +1,18 @@
+# Config for crystal-actions/contributor-mural.
+# Rendered by .github/workflows/stargazers-mural.yml and embedded in the README.
+
+# Writing a source block is what enables it. `repo:` defaults to this
+# repository, so it is left out.
+stargazers:
+  max: 100
+  group: Stargazers
+
+style: grid
+
+grid:
+  columns: 12
+  avatar_size: 64
+  shape: circle
+  margin: 8
+
+output: .github/assets/stargazers.svg
