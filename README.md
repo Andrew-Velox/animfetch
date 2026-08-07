@@ -162,7 +162,10 @@ in `src/prompt.rs`, short enough to read end to end.
 
 ## Stargazers
 
-[![Stargazers](.github/assets/stargazers.svg)](https://github.com/Andrew-Velox/animfetch/stargazers)
+<!-- Not linked to /stargazers: GitHub serves that page 404 to logged-out
+     visitors, so the link would break for anyone not signed in. -->
+
+![Stargazers](.github/assets/stargazers.svg)
 
 ## Credits
 
