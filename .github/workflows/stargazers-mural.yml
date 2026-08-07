@@ -1,0 +1,28 @@
+name: Generate Stargazers Mural
+
+on:
+  schedule:
+    # Runs every day at midnight
+    - cron: "0 0 * * *"
+  workflow_dispatch: # Allows you to run it manually from the Actions tab
+
+jobs:
+  generate-mural:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to commit the SVG back to the repo
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Generate Stargazers Mural
+        uses: crystal-actions/contributor-mural@v1.1.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # You may need to provide specific environment variables 
+          # or inputs to target stargazers based on the documentation
+
+      - name: Commit and Push SVG
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto-update stargazers mural"
