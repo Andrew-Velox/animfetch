@@ -155,6 +155,41 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/yin-yang/08.txt"),
         ],
     ),
+    (
+        "tree",
+        &[
+            include_str!("../assets/anim/tree/00.txt"),
+            include_str!("../assets/anim/tree/01.txt"),
+            include_str!("../assets/anim/tree/02.txt"),
+            include_str!("../assets/anim/tree/03.txt"),
+            include_str!("../assets/anim/tree/04.txt"),
+            include_str!("../assets/anim/tree/05.txt"),
+            include_str!("../assets/anim/tree/06.txt"),
+            include_str!("../assets/anim/tree/07.txt"),
+            include_str!("../assets/anim/tree/08.txt"),
+            include_str!("../assets/anim/tree/09.txt"),
+            include_str!("../assets/anim/tree/10.txt"),
+            include_str!("../assets/anim/tree/11.txt"),
+            include_str!("../assets/anim/tree/12.txt"),
+            include_str!("../assets/anim/tree/13.txt"),
+            include_str!("../assets/anim/tree/14.txt"),
+            include_str!("../assets/anim/tree/15.txt"),
+        ],
+    ),
+    (
+        "boxing",
+        &[
+            include_str!("../assets/anim/boxing/00.txt"),
+            include_str!("../assets/anim/boxing/01.txt"),
+            include_str!("../assets/anim/boxing/02.txt"),
+            include_str!("../assets/anim/boxing/03.txt"),
+            include_str!("../assets/anim/boxing/04.txt"),
+            include_str!("../assets/anim/boxing/05.txt"),
+            include_str!("../assets/anim/boxing/06.txt"),
+            include_str!("../assets/anim/boxing/07.txt"),
+            include_str!("../assets/anim/boxing/08.txt"),
+        ],
+    ),
 ];
 
 /// One frame as a binary coverage mask on a `width * height` grid.
