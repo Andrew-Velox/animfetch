@@ -44,8 +44,8 @@ ramp = " ░▒▓█"
 # Vertical colour ramp down the art. An empty list leaves the art uncoloured.
 gradient = ["#f5c95c", "#f17f5b", "#f45c82", "#b07cf4", "#74a4ff"]
 
-# Scroll the gradient through the art as it plays.
-gradient_scroll = true
+# Animate the gradient so it crawls through the art as it plays.
+gradient_scroll = false
 
 # Info pane colours.
 accent = "#74a4ff"   # user@host, the rule, and labels

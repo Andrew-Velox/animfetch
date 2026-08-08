@@ -105,7 +105,10 @@ impl Default for Config {
                 Rgb(0xb0, 0x7c, 0xf4),
                 Rgb(0x74, 0xa4, 0xff),
             ]),
-            gradient_scroll: true,
+            // Off by default: a gradient that crawls through the art draws the
+            // eye away from the terminal, which is the thing you are meant to be
+            // looking at.
+            gradient_scroll: false,
             accent: Color(Rgb(0x74, 0xa4, 0xff)),
             value: Color(Rgb(0xc8, 0xcc, 0xd4)),
             // Off by default, so an update never repaints someone's fetch.
