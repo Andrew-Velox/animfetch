@@ -130,6 +130,6 @@ The cat animations are redrawn as ASCII from [RunCat][runcat] by
 
 <!-- loc-start -->
 
-![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-4036-orange?style=flat-square)
+![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-4071-orange?style=flat-square)
 
 <!-- loc-end -->
