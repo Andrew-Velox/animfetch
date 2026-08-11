@@ -90,7 +90,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      # Full history and tags: the changelog walks commits back to the
+      # previous tag, and the default shallow checkout has neither.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -139,6 +143,39 @@ jobs:
           | `animfetch-__VER__-aarch64-unknown-linux-musl.tar.gz` | ARM 64-bit |
           EOF
           sed -i "s/__VER__/${GITHUB_REF_NAME}/g" notes.md
+
+          # Conventional-commit changelog since the previous tag. Commits the
+          # workflows write themselves are dropped: they tell a reader nothing.
+          prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || echo "")
+          range=${prev:+$prev..}${GITHUB_REF_NAME}
+          noise='^(chore: update stargazers mural|docs: update lines of code stats)[[:space:]]'
+
+          section() {
+            body=$(
+              git log --no-merges --format='%s%x09%h' "$range" \
+              | grep -Ev "$noise" \
+              | grep -E "^($2)(\([^)]*\))?!?:" \
+              | sed -E "s#^[a-z]+(\([^)]*\))?!?:[[:space:]]*(.*)\t(.*)#- \2 [\`\3\`](https://github.com/$GITHUB_REPOSITORY/commit/\3)#" \
+              || true
+            )
+            if [ -n "$body" ]; then
+              printf '### %s\n\n%s\n\n' "$1" "$body" >> notes.md
+            fi
+            return 0
+          }
+
+          printf '\n## Changelog\n\n' >> notes.md
+          section 'Features'      'feat'
+          section 'Fixes'         'fix'
+          section 'Performance'   'perf'
+          section 'Documentation' 'docs'
+          section 'Internal'      'refactor|ci|build|test|chore|style'
+
+          if [ -n "$prev" ]; then
+            printf '**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+              "$GITHUB_REPOSITORY" "$prev" "$GITHUB_REF_NAME" >> notes.md
+          fi
+
           cat notes.md
 
       - name: Publish
@@ -148,7 +185,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --notes-file notes.md \
-            --generate-notes \
             dist/* \
           || { gh release upload "$GITHUB_REF_NAME" dist/* --clobber; \
                gh release edit "$GITHUB_REF_NAME" --notes-file notes.md; }

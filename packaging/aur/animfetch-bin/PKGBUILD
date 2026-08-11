@@ -6,7 +6,7 @@
 
 pkgname=animfetch-bin
 _pkgname=animfetch
-pkgver=0.1.2
+pkgver=0.1.3
 pkgrel=1
 pkgdesc='Animated system fetch that stays pinned above your shell while you work'
 arch=('x86_64' 'aarch64')
