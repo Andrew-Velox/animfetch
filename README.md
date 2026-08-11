@@ -1,7 +1,18 @@
-# animfetch
+# animfetch 🧊
+
 
 An animated system fetch you can work inside. The art stays pinned at the top of
 the screen while your prompt and command output scroll below it. Linux only.
+
+<div align="center">
+
+[![version](https://img.shields.io/github/v/release/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/releases)
+[![stars](https://img.shields.io/github/stars/Andrew-Velox/animfetch?label=stars&color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/stargazers)
+[![license](https://img.shields.io/github/license/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](LICENSE)
+[![rust](https://img.shields.io/github/languages/top/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square&logo=rust&logoColor=white)](https://github.com/Andrew-Velox/animfetch)
+[![platform](https://img.shields.io/badge/platform-Linux-5cd5fb?style=flat-square&logo=linux&logoColor=white)](https://github.com/Andrew-Velox/animfetch)
+
+</div>
 
 ![animfetch running with a pinned fetch above a working shell](.github/assets/animfetch-demo.gif)
 
@@ -119,7 +130,7 @@ retheming recolours the running animation. Try it with `animfetch --once
 
 ## Credits
 
-The cat animations are redrawn as ASCII from [RunCat][runcat] by
+Some animations are redrawn as ASCII from [RunCat][runcat] by
 [kyome22][kyome], used under the Apache License 2.0.
 
 [runcat]: https://github.com/kyome22/menubar_runcat
