@@ -1,10 +1,9 @@
-# animfetch 🧊
-
+<h1 align="center">animfetch 🧊</h1>
+<div align="center">
 
 An animated system fetch you can work inside. The art stays pinned at the top of
 the screen while your prompt and command output scroll below it. Linux only.
 
-<div align="center">
 
 [![version](https://img.shields.io/github/v/release/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/releases)
 [![stars](https://img.shields.io/github/stars/Andrew-Velox/animfetch?label=stars&color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/stargazers)
