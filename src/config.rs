@@ -220,6 +220,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_broken_file_falls_back_but_says_so() {
+        // The fallback is deliberate: a stray comma should not stop the fetch
+        // drawing. Reporting it is not optional though, or the user's settings
+        // vanish with nothing said. `run` prints this for every mode.
+        let dir = std::env::temp_dir().join(format!("animfetch-cfg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), "animation = \"tree\"\ngap = = 3\n").unwrap();
+
+        let (cfg, warning) = load(Some(&dir));
+        assert_eq!(cfg.animation, Config::default().animation, "should be defaults");
+        assert!(warning.is_some(), "a broken config must not fail silently");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_valid_file_warns_about_nothing() {
+        let dir = std::env::temp_dir().join(format!("animfetch-ok-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), "animation = \"tree\"\n").unwrap();
+
+        let (cfg, warning) = load(Some(&dir));
+        assert_eq!(cfg.animation, "tree");
+        assert!(warning.is_none());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn partial_config_keeps_defaults_for_the_rest() {
         let cfg: Config = toml::from_str("fps = 30.0").unwrap();
         assert_eq!(cfg.fps, 30.0);

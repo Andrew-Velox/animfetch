@@ -17,7 +17,10 @@ const RESIZE_POLL: Duration = Duration::from_millis(500);
 
 /// Set up the screen, then detach and animate until the terminal goes away.
 pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
-    if live_owner()?.is_some() {
+    // Claiming is one atomic create, not a check followed by a write: two
+    // shells starting on the same terminal at once could otherwise both see no
+    // owner and both go on to animate the same rows.
+    if !claim_terminal()? {
         // A nested shell, most likely. Silent because this runs from an rc
         // file, where noise on every subshell gets a tool uninstalled.
         return Ok(());
@@ -27,6 +30,7 @@ pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
     let layout = Layout::pinned(fetch, cols, rows);
 
     let Some(split) = Split::fit(&layout, fetch.cfg, rows) else {
+        release_terminal();
         return Err(io::Error::other("terminal too short to pin a fetch"));
     };
 
@@ -51,9 +55,18 @@ pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
 
     // SAFETY: single-threaded here, so the child inherits no locks.
     match unsafe { libc::fork() } {
-        -1 => return Err(io::Error::last_os_error()),
-        0 => {}                    // child: fall through and animate
-        _ => return Ok(()),        // parent: hand the terminal back to the shell
+        -1 => {
+            release_terminal();
+            return Err(io::Error::last_os_error());
+        }
+        0 => {} // child: fall through and animate
+        child => {
+            // Written here rather than in the child: the parent must not return
+            // to the shell until the file names the process doing the drawing,
+            // or an --unpin run straight afterwards finds nothing pinned.
+            write_pid_file(child)?;
+            return Ok(());
+        }
     }
 
     // Leave the shell's group, or a Ctrl-C at its prompt kills the animation.
@@ -61,7 +74,6 @@ pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
     // SAFETY: valid on self here, since we are not a session leader.
     unsafe { libc::setpgid(0, 0) };
 
-    write_pid_file()?;
     let result = animate(fetch, shell_pgid, shell_pid);
     let _ = std::fs::remove_file(pid_path()?);
 
@@ -240,6 +252,92 @@ fn live_owner() -> io::Result<Option<libc::pid_t>> {
     }
 }
 
-fn write_pid_file() -> io::Result<()> {
-    std::fs::write(pid_path()?, std::process::id().to_string())
+fn write_pid_file(pid: libc::pid_t) -> io::Result<()> {
+    std::fs::write(pid_path()?, pid.to_string())
+}
+
+/// Take ownership of this terminal, or report that someone else holds it.
+///
+/// `create_new` is the whole point: the check and the claim are one syscall, so
+/// two instances racing cannot both win. The placeholder is our own pid, which
+/// is alive for as long as it matters: the parent replaces it with the child's
+/// before returning, and anyone reading in between sees a live owner either way.
+fn claim_terminal() -> io::Result<bool> {
+    let path = pid_path()?;
+
+    for _ in 0..2 {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                write!(file, "{}", std::process::id())?;
+                return Ok(true);
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                // Someone owns it, or left a file behind. `live_owner` deletes
+                // the file when the owner is gone, so one retry settles it.
+                if live_owner()?.is_some() {
+                    return Ok(false);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(false)
+}
+
+/// Give the claim back, for the paths that fail after taking it.
+fn release_terminal() {
+    if let Ok(path) = pid_path() {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `claim_terminal` writes through `pid_path`, which needs a tty, so these
+    /// exercise the claim logic against a path we control instead.
+    fn claim_at(path: &std::path::Path, pid: libc::pid_t) -> io::Result<bool> {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
+            Ok(mut file) => {
+                write!(file, "{pid}")?;
+                Ok(true)
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    #[test]
+    fn only_one_claim_can_win() {
+        // The bug this guards: a check followed by a separate write let two
+        // instances both see no owner and both start animating the same rows.
+        let dir = std::env::temp_dir().join(format!("animfetch-claim-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.pid");
+        let _ = std::fs::remove_file(&path);
+
+        assert!(claim_at(&path, 111).unwrap(), "first claim should win");
+        assert!(!claim_at(&path, 222).unwrap(), "second claim must lose");
+
+        // The winner's pid is the one recorded, not the loser's.
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "111");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_released_claim_can_be_taken_again() {
+        let dir = std::env::temp_dir().join(format!("animfetch-rel-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.pid");
+        let _ = std::fs::remove_file(&path);
+
+        assert!(claim_at(&path, 111).unwrap());
+        std::fs::remove_file(&path).unwrap();
+        assert!(claim_at(&path, 222).unwrap(), "release must free the terminal");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

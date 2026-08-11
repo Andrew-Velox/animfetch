@@ -48,7 +48,22 @@ fn run() -> io::Result<ExitCode> {
     };
 
     let dir = config::config_dir();
-    let (mut cfg, warning) = config::load(dir.as_deref());
+    let (cfg, warning) = config::load(dir.as_deref());
+    let result = dispatch(args, dir, cfg);
+
+    // Every mode funnels through here. Reporting after the mode has finished is
+    // what keeps a cleared screen or a first frame from wiping it, and routing
+    // all of them through one exit is what stops `--pin`, `--play` and `--once`
+    // from swallowing it entirely.
+    if let Some(warning) = warning {
+        eprintln!("animfetch: {warning}");
+    }
+
+    result
+}
+
+/// Run whichever mode the arguments selected.
+fn dispatch(args: Args, dir: Option<std::path::PathBuf>, mut cfg: Config) -> io::Result<ExitCode> {
     args.apply(&mut cfg);
 
     // Before anything is drawn, so every mode gets the same colours.
@@ -105,12 +120,6 @@ fn run() -> io::Result<ExitCode> {
     }
 
     let status = shell_loop(&fetch)?;
-
-    // Held back until now; earlier would have been wiped by the first frame.
-    if let Some(warning) = warning {
-        eprintln!("animfetch: {warning}");
-    }
-
     Ok(ExitCode::from(status))
 }
 
