@@ -190,6 +190,51 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/boxing/08.txt"),
         ],
     ),
+    (
+        "deer-run",
+        &[
+            include_str!("../assets/anim/deer-run/00.txt"),
+            include_str!("../assets/anim/deer-run/01.txt"),
+            include_str!("../assets/anim/deer-run/02.txt"),
+            include_str!("../assets/anim/deer-run/03.txt"),
+            include_str!("../assets/anim/deer-run/04.txt"),
+            include_str!("../assets/anim/deer-run/05.txt"),
+            include_str!("../assets/anim/deer-run/06.txt"),
+            include_str!("../assets/anim/deer-run/07.txt"),
+            include_str!("../assets/anim/deer-run/08.txt"),
+        ],
+    ),
+    (
+        "chicken-run",
+        &[
+            include_str!("../assets/anim/chicken-run/00.txt"),
+            include_str!("../assets/anim/chicken-run/01.txt"),
+            include_str!("../assets/anim/chicken-run/02.txt"),
+            include_str!("../assets/anim/chicken-run/03.txt"),
+            include_str!("../assets/anim/chicken-run/04.txt"),
+        ],
+    ),
+    (
+        "squirrel-run",
+        &[
+            include_str!("../assets/anim/squirrel-run/00.txt"),
+            include_str!("../assets/anim/squirrel-run/01.txt"),
+            include_str!("../assets/anim/squirrel-run/02.txt"),
+            include_str!("../assets/anim/squirrel-run/03.txt"),
+            include_str!("../assets/anim/squirrel-run/04.txt"),
+        ],
+    ),
+    (
+        "horse-run",
+        &[
+            include_str!("../assets/anim/horse-run/00.txt"),
+            include_str!("../assets/anim/horse-run/01.txt"),
+            include_str!("../assets/anim/horse-run/02.txt"),
+            include_str!("../assets/anim/horse-run/03.txt"),
+            include_str!("../assets/anim/horse-run/04.txt"),
+            include_str!("../assets/anim/horse-run/05.txt"),
+        ],
+    ),
 ];
 
 /// One frame as a binary coverage mask on a `width * height` grid.
@@ -707,6 +752,7 @@ mod tests {
         assert_eq!(anim.frames.len(), 5);
         // Registration between poses depends on this.
         assert!(anim.frames.iter().all(|f| f.height == anim.height));
+        assert!(anim.frames.iter().all(|f| f.width == anim.width));
     }
 
     #[test]
@@ -719,7 +765,10 @@ mod tests {
             assert_eq!(anim.frames.len(), frames.len(), "{name}");
             // Poses have to be registered against a shared canvas, or the art
             // jitters as it plays.
-            assert!(anim.frames.iter().all(|f| f.height == anim.height), "{name}");
+            assert!(anim.frames.iter().all(|f| f.height == anim.height), "{name} height");
+            // A single trailing space widens one frame and makes it render
+            // narrower than the rest, which reads as a twitch as it plays.
+            assert!(anim.frames.iter().all(|f| f.width == anim.width), "{name} width");
             assert!(listed.iter().any(|e| e.name == *name && e.path.is_none()));
         }
     }
