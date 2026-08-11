@@ -8,8 +8,10 @@ the screen while your prompt and command output scroll below it. Linux only.
 [![version](https://img.shields.io/github/v/release/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/releases)
 [![stars](https://img.shields.io/github/stars/Andrew-Velox/animfetch?label=stars&color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/stargazers)
 [![license](https://img.shields.io/github/license/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](LICENSE)
-[![rust](https://img.shields.io/github/languages/top/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square&logo=rust&logoColor=white)](https://github.com/Andrew-Velox/animfetch)
 [![platform](https://img.shields.io/badge/platform-Linux-5cd5fb?style=flat-square&logo=linux&logoColor=white)](https://github.com/Andrew-Velox/animfetch)
+[![issues](https://img.shields.io/github/issues/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/issues)<!-- loc-start -->
+![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-4259-5cd5fb?style=flat-square)
+<!-- loc-end -->
 
 </div>
 
@@ -138,8 +140,3 @@ Some animations are redrawn as ASCII from [RunCat][runcat] by
 
 <hr>
 
-<!-- loc-start -->
-
-![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-4259-orange?style=flat-square)
-
-<!-- loc-end -->
