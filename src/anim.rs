@@ -170,10 +170,6 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/tree/09.txt"),
             include_str!("../assets/anim/tree/10.txt"),
             include_str!("../assets/anim/tree/11.txt"),
-            include_str!("../assets/anim/tree/12.txt"),
-            include_str!("../assets/anim/tree/13.txt"),
-            include_str!("../assets/anim/tree/14.txt"),
-            include_str!("../assets/anim/tree/15.txt"),
         ],
     ),
     (
