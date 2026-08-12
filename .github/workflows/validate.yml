@@ -1,6 +1,6 @@
 name: Validate Markdown & Count LOC
 
-on: [push, pull_request]
+on: [pull_request]
 
 # git-auto-commit-action pushes back to the repo, which the default read-only
 # token cannot do.

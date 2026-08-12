@@ -264,6 +264,19 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/earth/23.txt"),
         ],
     ),
+    (
+        "saturn",
+        &[
+            include_str!("../assets/anim/saturn/00.txt"),
+            include_str!("../assets/anim/saturn/01.txt"),
+            include_str!("../assets/anim/saturn/02.txt"),
+            include_str!("../assets/anim/saturn/03.txt"),
+            include_str!("../assets/anim/saturn/04.txt"),
+            include_str!("../assets/anim/saturn/05.txt"),
+            include_str!("../assets/anim/saturn/06.txt"),
+            include_str!("../assets/anim/saturn/07.txt"),
+        ],
+    ),
 ];
 
 /// One frame as a binary coverage mask on a `width * height` grid.
