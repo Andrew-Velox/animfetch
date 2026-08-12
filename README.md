@@ -23,10 +23,14 @@ the screen while your prompt and command output scroll below it. Linux only.
 
 |   |   |   |   |   |
 |:---:|:---:|:---:|:---:|:---:|
-|cat-run|cat-tail|fox-run|dolphin-run|blackhole|
-| ![](.github/assets/cat-run.gif) | ![](.github/assets/cat-tail.gif) | ![](.github/assets/fox-run.gif) | ![](.github/assets/dolphin-run.gif) | ![](.github/assets/blackhole.gif) |
+|cat-run|cat-tail|fox-run|dolphin-swim|blackhole|
+| ![](.github/assets/cat-run.gif) | ![](.github/assets/cat-tail.gif) | ![](.github/assets/fox-run.gif) | ![](.github/assets/dolphin-swim.gif) | ![](.github/assets/blackhole.gif) |
 |butterfly|icosahedron|rabbit-run|mew|yin-yang|
 | ![](.github/assets/butterfly.gif) | ![](.github/assets/icosahedron.gif) | ![](.github/assets/rabbit-run.gif) | ![](.github/assets/mew.gif) | ![](.github/assets/yin-yang.gif) |
+|tree|boxing|chicken-run|deer-run|horse-run|
+| ![](.github/assets/tree.gif) | ![](.github/assets/boxing.gif) | ![](.github/assets/chicken-run.gif) | ![](.github/assets/deer-run.gif) | ![](.github/assets/horse-run.gif) |
+|squirrel-run|earth|saturn|||
+| ![](.github/assets/squirrel-run.gif) | ![](.github/assets/earth.gif) | ![](.github/assets/saturn.gif) | | |
 
 Pick one with `-a <name>`, or set the default with `--set <name>`.
 
