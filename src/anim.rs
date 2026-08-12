@@ -235,6 +235,35 @@ const BUNDLED: &[(&str, &[&str])] = &[
             include_str!("../assets/anim/horse-run/05.txt"),
         ],
     ),
+    (
+        "earth",
+        &[
+            include_str!("../assets/anim/earth/00.txt"),
+            include_str!("../assets/anim/earth/01.txt"),
+            include_str!("../assets/anim/earth/02.txt"),
+            include_str!("../assets/anim/earth/03.txt"),
+            include_str!("../assets/anim/earth/04.txt"),
+            include_str!("../assets/anim/earth/05.txt"),
+            include_str!("../assets/anim/earth/06.txt"),
+            include_str!("../assets/anim/earth/07.txt"),
+            include_str!("../assets/anim/earth/08.txt"),
+            include_str!("../assets/anim/earth/09.txt"),
+            include_str!("../assets/anim/earth/10.txt"),
+            include_str!("../assets/anim/earth/11.txt"),
+            include_str!("../assets/anim/earth/12.txt"),
+            include_str!("../assets/anim/earth/13.txt"),
+            include_str!("../assets/anim/earth/14.txt"),
+            include_str!("../assets/anim/earth/15.txt"),
+            include_str!("../assets/anim/earth/16.txt"),
+            include_str!("../assets/anim/earth/17.txt"),
+            include_str!("../assets/anim/earth/18.txt"),
+            include_str!("../assets/anim/earth/19.txt"),
+            include_str!("../assets/anim/earth/20.txt"),
+            include_str!("../assets/anim/earth/21.txt"),
+            include_str!("../assets/anim/earth/22.txt"),
+            include_str!("../assets/anim/earth/23.txt"),
+        ],
+    ),
 ];
 
 /// One frame as a binary coverage mask on a `width * height` grid.
@@ -242,6 +271,9 @@ pub struct Frame {
     width: usize,
     height: usize,
     ink: Vec<bool>,
+    /// The characters as authored. Every other style throws these away and
+    /// works from `ink`, but `Ink::Raw` draws the art exactly as written.
+    art: Vec<char>,
     /// Blank cells enclosed by ink (an eye, a nostril) rather than background.
     /// Part of the drawing, so preserved rather than averaged.
     hole: Vec<bool>,
@@ -254,15 +286,17 @@ impl Frame {
 
         // Straight into the rectangle; short lines keep their padding.
         let mut ink = vec![false; width * height];
+        let mut art = vec![' '; width * height];
         for (y, line) in text.lines().enumerate() {
-            let row = &mut ink[y * width..(y + 1) * width];
-            for (cell, c) in row.iter_mut().zip(line.chars()) {
-                *cell = !c.is_whitespace();
+            let base = y * width;
+            for (i, c) in line.chars().enumerate().take(width) {
+                ink[base + i] = !c.is_whitespace();
+                art[base + i] = c;
             }
         }
 
         let hole = Self::enclosed_holes(&ink, width, height);
-        Self { width, height, ink, hole }
+        Self { width, height, ink, art, hole }
     }
 
     /// Blank cells unreachable from the border. Flooding inward is what tells a
@@ -403,6 +437,13 @@ impl Frame {
                     | (solid(x + 1, y + 1) as usize);
                 QUADRANTS[bits]
             }
+            Ink::Raw => {
+                // Nearest neighbour, not coverage: averaging characters is
+                // meaningless, and at 1:1 this reproduces the source exactly.
+                let sx = (ox * self.width / out_w.max(1)).min(self.width.saturating_sub(1));
+                let sy = (oy * self.height / out_h.max(1)).min(self.height.saturating_sub(1));
+                self.art.get(sy * self.width + sx).copied().unwrap_or(' ')
+            }
             Ink::Ramp(ramp) => {
                 debug_assert!(!ramp.is_empty());
                 let top = (ramp.len() - 1) as f32;
@@ -423,12 +464,14 @@ pub enum Ink<'a> {
     Quad,
     /// One sample per cell, mapped onto a density ramp by coverage.
     Ramp(&'a [char]),
+    /// The characters exactly as authored, nearest-neighbour sampled. For art
+    /// whose glyphs carry the picture, where a coverage mask discards it.
+    Raw,
 }
 
 /// Indexed by the four samples as bits: TL, TR, BL, BR.
 const QUADRANTS: [char; 16] = [
-    ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟', '▘', '▚', '▌', '▙', '▀', '▜', '▛', '█',
-];
+    ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟', '▘', '▚', '▌', '▙', '▀', '▜', '▛', '█',];
 
 /// Orthogonal neighbours of `i`, clipped at the edges. Four-connectivity means
 /// a diagonal touch isn't an opening, so a diagonally bounded hole stays one.

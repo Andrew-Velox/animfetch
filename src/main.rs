@@ -620,12 +620,13 @@ impl Args {
                     args.width = Some(raw.parse().map_err(|_| format!("not a number: {raw}"))?);
                 }
                 "--style" => {
-                    let raw = argv.next().ok_or("--style needs half, quad, or ramp")?;
+                    let raw = argv.next().ok_or("--style needs half, quad, ramp, or raw")?;
                     args.style = Some(match raw.as_str() {
                         "half" => config::Style::Half,
                         "quad" => config::Style::Quad,
                         "ramp" => config::Style::Ramp,
-                        other => return Err(format!("unknown style: {other} (half, quad, or ramp)")),
+                        "raw" => config::Style::Raw,
+                        other => return Err(format!("unknown style: {other} (half, quad, ramp, or raw)")),
                     });
                 }
                 "-H" | "--height" => {
@@ -691,7 +692,7 @@ Animations:
 
 Options:
   -f, --fps <N>           Frames per second
-      --style <STYLE>     half (default), quad (finest detail), ramp (ASCII)
+      --style <STYLE>     half (default), quad (finest detail), ramp (ASCII), raw
   -W, --width <COLS>      Cap the art width (0 fills the screen)
   -H, --height <ROWS>     Cap the art height (0 fills the screen)
   -s, --seconds <N>       How long --play animates

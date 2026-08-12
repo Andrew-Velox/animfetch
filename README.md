@@ -6,7 +6,7 @@ the screen while your prompt and command output scroll below it. Linux only.
 
 
 [![version](https://img.shields.io/github/v/release/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/releases)
-[![stars](https://img.shields.io/github/stars/Andrew-Velox/animfetch?label=stars&color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/stargazers)
+[![stars](https://img.shields.io/github/stars/Andrew-Velox/animfetch?label=stars&color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch)
 [![license](https://img.shields.io/github/license/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-Linux-5cd5fb?style=flat-square&logo=linux&logoColor=white)](https://github.com/Andrew-Velox/animfetch)
 [![issues](https://img.shields.io/github/issues/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/issues)<!-- loc-start -->
@@ -68,7 +68,7 @@ its history, completion and aliases intact. Undo with `animfetch --unpin`.
 
 ```sh
 animfetch -a cat-tail        # different animation, this run only
-animfetch --style quad       # half (default), quad, or ramp
+animfetch --style quad       # half (default), quad, ramp, or raw
 animfetch --width 40         # cap the art width (0 fills the screen)
 animfetch --height 12        # both caps apply, aspect ratio is kept
 animfetch --fps 20
@@ -77,6 +77,12 @@ animfetch --no-color
 ```
 
 Piping the output, or `NO_COLOR=1`, drops to the static path automatically.
+
+`--style` picks how the art is drawn. `half` and `quad` render it as solid
+blocks and rescale to any terminal. `ramp` maps coverage onto the characters in
+`ramp`. `raw` prints the art's own characters untouched, which suits hand-drawn
+ASCII like `earth`; pair it with `--width` near the art's own width, since it
+samples rather than averages.
 
 ### In your shell startup
 

@@ -35,6 +35,11 @@ play_seconds = 3.0
 #   ramp  One sample per cell, mapped onto `ramp` below by density. Use it for
 #         a classic ASCII look, but note the shaded blocks are stipple
 #         patterns in most fonts, which reads as noise along edges.
+#   raw   The art's own characters, exactly as authored. For hand-drawn ASCII
+#         whose glyphs are the picture rather than a silhouette, like `earth`.
+#         It samples rather than averages, so it wants `width` near the art's
+#         own width; shrink it much below that and glyphs drop out. On art
+#         built from solid blocks you will just see those blocks.
 style = "half"
 
 # Only used when style = "ramp". Lowest ink coverage first.

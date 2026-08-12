@@ -17,6 +17,9 @@ pub enum Style {
     Quad,
     /// A density ramp, configured by `ramp`. Use for a classic ASCII look.
     Ramp,
+    /// The art's own characters, unresampled. For hand-drawn ASCII whose
+    /// glyphs are the picture rather than a coverage mask.
+    Raw,
 }
 
 /// Where the accent, value and gradient colours come from.
@@ -176,6 +179,7 @@ impl Config {
             Style::Half => crate::anim::Ink::Half,
             Style::Quad => crate::anim::Ink::Quad,
             Style::Ramp => crate::anim::Ink::Ramp(ramp),
+            Style::Raw => crate::anim::Ink::Raw,
         }
     }
 }
