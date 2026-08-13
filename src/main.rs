@@ -75,6 +75,48 @@ fn dispatch(args: Args, dir: Option<std::path::PathBuf>, mut cfg: Config) -> io:
         cfg.color = false;
     }
 
+    // Persist the overrides this run carried. Done after `apply`, so anything
+    // the parser rejected never reaches the file, and before the modes so the
+    // saved settings are the ones you also see this time.
+    if args.save {
+        let Some(dir) = dir.as_deref() else {
+            return Err(io::Error::other("no config directory: set HOME or XDG_CONFIG_HOME"));
+        };
+        let mut saved: Vec<String> = Vec::new();
+        if let Some(v) = &args.animation {
+            set_key(dir, "animation", &format!("{v:?}"))?;
+            saved.push(format!("animation = {v:?}"));
+        }
+        if let Some(v) = args.style {
+            let name = match v {
+                config::Style::Half => "half",
+                config::Style::Quad => "quad",
+                config::Style::Ramp => "ramp",
+                config::Style::Raw => "raw",
+            };
+            set_key(dir, "style", &format!("{name:?}"))?;
+            saved.push(format!("style = {name:?}"));
+        }
+        if let Some(v) = args.fps {
+            set_key(dir, "fps", &v.to_string())?;
+            saved.push(format!("fps = {v}"));
+        }
+        if let Some(v) = args.width {
+            set_key(dir, "width", &v.to_string())?;
+            saved.push(format!("width = {v}"));
+        }
+        if let Some(v) = args.height {
+            set_key(dir, "height", &v.to_string())?;
+            saved.push(format!("height = {v}"));
+        }
+
+        if saved.is_empty() {
+            eprintln!("animfetch: --save needs a setting to save, such as --style raw");
+        } else {
+            println!("saved to {}: {}", dir.join("config.toml").display(), saved.join(", "));
+        }
+    }
+
     let anim_dir = dir.as_ref().map(|d| d.join("anim"));
 
     if args.list {
@@ -148,6 +190,15 @@ fn list_animations(dir: Option<&std::path::Path>, current: &str) {
 /// Write `animation = "<name>"` into the config, creating it if needed. Edited
 /// as text, so comments survive. A trailing comment on that line does not.
 fn set_animation(dir: &std::path::Path, name: &str) -> io::Result<std::path::PathBuf> {
+    set_key(dir, "animation", &format!("{name:?}"))
+}
+
+/// Write `key = value` into the config, creating it if needed.
+///
+/// Edits the file as text so comments and every key left at its default
+/// survive; reserialising the parsed config would discard both. A trailing
+/// comment on the line being replaced is the one thing this loses.
+fn set_key(dir: &std::path::Path, key: &str, value: &str) -> io::Result<std::path::PathBuf> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join("config.toml");
 
@@ -157,12 +208,12 @@ fn set_animation(dir: &std::path::Path, name: &str) -> io::Result<std::path::Pat
         Err(e) => return Err(e),
     };
 
-    let setting = format!("animation = {name:?}");
+    let setting = format!("{key} = {value}");
     let mut replaced = false;
     let mut out = String::with_capacity(existing.len() + setting.len() + 1);
 
     for line in existing.lines() {
-        if !replaced && line.trim_start().starts_with("animation") && line.contains('=') {
+        if !replaced && line.trim_start().starts_with(key) && line.contains('=') {
             out.push_str(&setting);
             replaced = true;
         } else {
@@ -577,6 +628,7 @@ struct Args {
     seconds: Option<f32>,
     list: bool,
     set: Option<String>,
+    save: bool,
     once: bool,
     no_color: bool,
     palette: bool,
@@ -619,6 +671,7 @@ impl Args {
                     let raw = argv.next().ok_or("--width needs a number of columns")?;
                     args.width = Some(raw.parse().map_err(|_| format!("not a number: {raw}"))?);
                 }
+                "--save" => args.save = true,
                 "--style" => {
                     let raw = argv.next().ok_or("--style needs half, quad, ramp, or raw")?;
                     args.style = Some(match raw.as_str() {
@@ -693,6 +746,7 @@ Animations:
 Options:
   -f, --fps <N>           Frames per second
       --style <STYLE>     half (default), quad (finest detail), ramp (ASCII), raw
+      --save              Keep the settings given this run, for every run after
   -W, --width <COLS>      Cap the art width (0 fills the screen)
   -H, --height <ROWS>     Cap the art height (0 fills the screen)
   -s, --seconds <N>       How long --play animates
@@ -719,3 +773,47 @@ While running:
 Config: ~/.config/animfetch/config.toml
 Art:    ~/.config/animfetch/anim/<name>/*.txt
 ";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saving_a_key_leaves_the_rest_of_the_config_alone() {
+        // The point of editing as text: comments and untouched keys survive.
+        // Reserialising the parsed config would discard both.
+        let dir = std::env::temp_dir().join(format!("animfetch-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.toml"),
+            "# keep me\nanimation = \"tree\"\nstyle = \"half\"\nwidth = 62\n",
+        )
+        .unwrap();
+
+        set_key(&dir, "style", "\"quad\"").unwrap();
+        let out = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+
+        assert!(out.contains("# keep me"), "comment lost: {out}");
+        assert!(out.contains("style = \"quad\""), "not replaced: {out}");
+        assert!(out.contains("animation = \"tree\""), "other key lost: {out}");
+        assert!(out.contains("width = 62"), "other key lost: {out}");
+        assert_eq!(out.matches("style =").count(), 1, "duplicated: {out}");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn saving_a_key_the_file_lacks_appends_it() {
+        let dir = std::env::temp_dir().join(format!("animfetch-add-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), "animation = \"tree\"\n").unwrap();
+
+        set_key(&dir, "fps", "8").unwrap();
+        let out = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+
+        assert!(out.contains("animation = \"tree\""));
+        assert!(out.contains("fps = 8"));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
