@@ -10,7 +10,7 @@ the screen while your prompt and command output scroll below it. Linux only.
 [![license](https://img.shields.io/github/license/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-Linux-5cd5fb?style=flat-square&logo=linux&logoColor=white)](https://github.com/Andrew-Velox/animfetch)
 [![issues](https://img.shields.io/github/issues/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/issues)<!-- loc-start -->
-![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-4307-orange?style=flat-square)
+<!-- ![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-4307-orange?style=flat-square) -->
 
 <!-- loc-end -->
 
