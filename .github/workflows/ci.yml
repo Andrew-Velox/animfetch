@@ -117,18 +117,30 @@ jobs:
           fi
           printf '%s\n' "$output"
 
-          # Every animation shipped in assets/ must actually load. There is no
-          # animation directory in the runner's HOME, so these can only resolve
-          # through the bundled copies, which means this also catches art that
-          # was added to assets/ but never registered in the BUNDLED table in
-          # src/anim.rs.
-          for dir in assets/anim/*/; do
-            name=$(basename "$dir")
+          # Every bundled animation must load in every style. Names come from
+          # --list, not from the directory tree: art can be filed in category
+          # folders, so `assets/anim/*/` would offer `animals` as if it were an
+          # animation. There is no animation directory in the runner's HOME, so
+          # these can only resolve through the bundled copies.
+          names=$(run --list | awk '{print ($1 == "*") ? $2 : $1}')
+          for name in $names; do
             echo "--- $name ---"
-            for style in half quad ramp; do
+            for style in half quad ramp raw; do
               run --once --animation "$name" --style "$style" > /dev/null
             done
           done
+
+          # build.rs bundles every directory holding .txt frames, so the count
+          # it found and the count on disk have to agree. A mismatch means art
+          # was skipped, which used to happen silently when the table in
+          # src/anim.rs was maintained by hand.
+          on_disk=$(find assets/anim -name '*.txt' -printf '%h\n' | sort -u | wc -l)
+          bundled=$(printf '%s\n' $names | wc -l)
+          if [ "$on_disk" -ne "$bundled" ]; then
+            echo "::error::$on_disk animation directories on disk but $bundled bundled"
+            exit 1
+          fi
+          echo "$bundled animations, all styles ok"
 
           # A typo in an animation name must be an error. Silently falling back
           # to the default art would hide the mistake.
