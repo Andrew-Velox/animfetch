@@ -1,80 +1,135 @@
-# Packaging
+# Releasing a new version
 
-How animfetch gets to people who do not have a Rust toolchain. Nothing in here
-is needed to build or run it; see the main README for that.
-
-The three pieces fit together in one direction:
+The whole pipeline in one direction:
 
 ```
-git tag v0.1.0  ->  release.yml  ->  GitHub Release with static binaries
+git tag vX.Y.Z  ->  release.yml  ->  GitHub Release, four tarballs + SHA256SUMS
                                           |                    |
                                      install.sh          animfetch-bin (AUR)
 ```
 
-Everything downstream reads from the Release, so cutting one is always the first
-step.
+Everything downstream reads from the Release, so nothing on the AUR can be
+updated until the Release exists. `animfetch-git` builds from HEAD and never
+needs any of this.
 
-## Before the first release
+## 1. Bump the version
 
-Two things are missing, and both block the AUR:
-
-- **A LICENSE file.** A repository without one is "all rights reserved" by
-  default, which means nobody can legally redistribute it, and Arch requires
-  the licence text to be installed with the package. Pick a licence, commit it
-  as `LICENSE`, set `license=()` in both PKGBUILDs to match, and uncomment the
-  `install -Dm644 LICENSE` line in each `package()`.
-- **Checksums in `animfetch-bin`.** `sha256sums_*` are `SKIP` because there is
-  nothing to hash yet. Run `updpkgsums` once the release exists.
-
-## Cutting a release
+In the animfetch repo, with a clean tree:
 
 ```sh
-# 1. Bump the version in Cargo.toml, then refresh the lockfile.
-cargo build --release
-
-# 2. Commit, tag, push. The tag is what triggers release.yml.
-git commit -am 'release v0.1.0'
-git tag v0.1.0
-git push origin main v0.1.0
+git pull        # the mural and LOC workflows commit to main on their own
 ```
 
-`release.yml` then builds `x86_64` and `aarch64` static binaries on native
-runners, checks each is really static, smoke-tests it, and attaches the
-tarballs plus `SHA256SUMS` to a GitHub Release.
-
-Check it worked:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
-```
-
-## Publishing to the AUR
-
-Only you can do this, since it needs your AUR account and SSH key. Once per
-package:
+Edit `Cargo.toml`: `version = "X.Y.Z"`. Then in
+`packaging/aur/animfetch-bin/PKGBUILD`: set `pkgver=X.Y.Z` and reset both
+`sha256sums_*` lines to `'SKIP'`, because the old sums describe the previous
+release's tarballs.
 
 ```sh
-# Register the SSH key you use for the AUR at https://aur.archlinux.org/
-git clone ssh://aur@aur.archlinux.org/animfetch-bin.git
-cd animfetch-bin
-cp /path/to/animfetch/packaging/aur/animfetch-bin/PKGBUILD .
-
-updpkgsums                          # pin the real checksums
-makepkg -si                         # confirm it builds and installs
-namcap PKGBUILD *.pkg.tar.zst       # must be clean before pushing
-
-makepkg --printsrcinfo > .SRCINFO   # the AUR reads this, not the PKGBUILD
-git add PKGBUILD .SRCINFO
-git commit -m 'initial release'
+cargo build --release       # refreshes Cargo.lock to the new version
+cargo test --release
+git add -A
+git commit -m 'release: vX.Y.Z'
 git push
 ```
 
-`animfetch-git` is the same flow with no `updpkgsums` step, and it works without
-a release existing, so it is worth putting up first if you want something
-installable today.
+## 2. Wait for CI, then tag
 
-For each later version: bump `pkgver`, `updpkgsums`, regenerate `.SRCINFO`,
-commit, push.
+Do not tag in the same breath as the push. Wait for CI to go green first,
+especially the macos job, so a broken commit never becomes a release. Then:
+
+```sh
+git pull        # the bots may have moved main again while CI ran
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+Pulling before tagging matters: a tag pointing at a commit that is not on
+origin makes the next `git push` fail with non-fast-forward, and untangling
+that after the tag is public means merging rather than rebasing.
+
+The tag push triggers `release.yml`: two Linux musl builds, two macOS builds,
+smoke tests, tarballs, `SHA256SUMS`, and a changelog generated from the
+conventional-commit prefixes since the previous tag. Commits without a
+`feat:`/`fix:`/`docs:` style prefix are left out of the changelog.
+
+## 3. Check the release
+
+```sh
+curl -fsSL https://github.com/Andrew-Velox/animfetch/releases/download/vX.Y.Z/SHA256SUMS
+```
+
+Four lines means all four targets published. The real end-to-end check:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
+animfetch --version
+```
+
+## 4. Update animfetch-bin on the AUR
+
+Needs `pacman-contrib` installed (for `updpkgsums`). In the AUR clone
+(`ssh://aur@aur.archlinux.org/animfetch-bin.git`):
+
+```sh
+cd ~/Projects/rust/animfetch-bin
+git pull
+cp ~/Projects/rust/animfetch/packaging/aur/animfetch-bin/PKGBUILD .
+updpkgsums
+makepkg --printsrcinfo > .SRCINFO
+makepkg -f                          # proves it builds from the real release
+namcap PKGBUILD *.pkg.tar.zst       # see known output below
+rm -rf src pkg *.pkg.tar.zst animfetch-*.tar.gz
+git add PKGBUILD .SRCINFO
+git commit -m 'update to X.Y.Z'
+git push
+```
+
+Rules learned the hard way:
+
+- **`.SRCINFO` must be in the commit.** The AUR reads only `.SRCINFO`; a push
+  without it succeeds but the site keeps showing the old version, with a
+  `warning: .SRCINFO unchanged` you can easily miss in the push output.
+- **Run the commands one at a time, not as one `&&` chain.** A missing
+  `updpkgsums` once broke the chain silently and a PKGBUILD with `SKIP`
+  checksums went out.
+- **Never push `SKIP` checksums.** They disable download verification for
+  everyone who installs the package.
+- **Delete the downloaded tarballs before committing.** `makepkg` leaves them
+  in the clone and they must not go into the AUR repo.
+
+If `updpkgsums` is unavailable, pin by hand: download `SHA256SUMS` from the
+release, copy the two `*-unknown-linux-musl` hashes into `sha256sums_x86_64`
+and `sha256sums_aarch64`, and verify with `makepkg -f` before pushing.
+
+## 5. Sync back and verify
+
+Copy the pinned PKGBUILD back so the repo copy matches what the AUR serves:
+
+```sh
+cd ~/Projects/rust/animfetch
+cp ~/Projects/rust/animfetch-bin/PKGBUILD packaging/aur/animfetch-bin/
+git commit -am 'packaging: pin vX.Y.Z checksums'
+git push
+```
+
+The AUR web page and RPC index lag a few minutes behind a push. Check what is
+actually served before assuming a problem:
+
+```sh
+curl -s 'https://aur.archlinux.org/cgit/aur.git/plain/.SRCINFO?h=animfetch-bin' | grep pkgver
+```
+
+Installing through paru inside that lag window fetches the previous version;
+`paru -Sy animfetch-bin` after ten minutes or so gets the new one.
+
+## animfetch-git
+
+Nothing to do per release: it builds whatever HEAD is. Its `pkgver` in
+`.SRCINFO` is a placeholder (`0.1.0.r0.g0000000`) that `pkgver()` replaces at
+build time. That is normal for VCS packages, but AUR helpers use the placeholder
+to detect updates, so it never looks updated on the site. Refreshing it
+occasionally is cosmetic: run `makepkg` in the clone, regenerate `.SRCINFO`,
+push.
 
 ## Known namcap output
 
