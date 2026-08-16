@@ -30,14 +30,21 @@ jobs:
             runner: ubuntu-24.04
           - target: aarch64-unknown-linux-musl
             runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          # GitHub retired the free Intel macOS runners, so this one is
+          # cross-compiled on the arm runner and smoke tested under Rosetta
+          # when the image provides it.
+          - target: x86_64-apple-darwin
+            runner: macos-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      # musl, not glibc. A glibc binary built here refuses to start on any
-      # distro with an older glibc than the runner's, which is most of the point
-      # of shipping a binary at all. Every dependency is pure Rust, so the musl
-      # target needs no C toolchain. See `cargo tree`.
+      # Linux ships musl, not glibc: a glibc binary refuses to start on any
+      # distro older than the runner, which defeats shipping a binary at all.
+      # macOS links the OS-stable libSystem, so its binaries need nothing
+      # special. Every dependency is pure Rust either way. See `cargo tree`.
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -49,6 +56,7 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Check the binary is actually static
+        if: contains(matrix.target, 'musl')
         run: |
           bin=target/${{ matrix.target }}/release/animfetch
           file "$bin"
@@ -59,11 +67,17 @@ jobs:
             exit 1
           fi
 
-      # Both runners are native for their architecture, so the binary that gets
-      # shipped is the one that just ran.
+      # Native everywhere except x86_64 macOS, which runs under Rosetta when
+      # the runner image has it and is skipped (loudly) when it does not.
       - name: Smoke test
         run: |
           bin=target/${{ matrix.target }}/release/animfetch
+          if [ "${{ matrix.target }}" = "x86_64-apple-darwin" ]; then
+            if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+              echo "::warning::no Rosetta on this runner; x86_64-apple-darwin binary is untested"
+              exit 0
+            fi
+          fi
           "$bin" --version
           "$bin" --list
           "$bin" --once
@@ -75,7 +89,11 @@ jobs:
           cp target/${{ matrix.target }}/release/animfetch "dist/$name/"
           cp README.md config.example.toml LICENSE "dist/$name/"
           tar -C dist -czf "$name.tar.gz" "$name"
-          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          else
+            shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -126,7 +144,7 @@ jobs:
           paru -S animfetch-bin
           ```
 
-          Any Linux, static binary, no Rust needed:
+          Any Linux or macOS, prebuilt binary, no Rust needed:
 
           ```sh
           curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
@@ -134,13 +152,15 @@ jobs:
 
           ## Binaries
 
-          Static musl builds. They run on any distribution regardless of its glibc
-          version. Check a download against `SHA256SUMS`.
+          The Linux builds are static musl, so they run on any distribution
+          regardless of its glibc version. Check a download against `SHA256SUMS`.
 
           | File | For |
           | --- | --- |
-          | `animfetch-__VER__-x86_64-unknown-linux-musl.tar.gz` | Intel and AMD 64-bit |
-          | `animfetch-__VER__-aarch64-unknown-linux-musl.tar.gz` | ARM 64-bit |
+          | `animfetch-__VER__-x86_64-unknown-linux-musl.tar.gz` | Linux, Intel and AMD |
+          | `animfetch-__VER__-aarch64-unknown-linux-musl.tar.gz` | Linux, ARM |
+          | `animfetch-__VER__-aarch64-apple-darwin.tar.gz` | macOS, Apple Silicon |
+          | `animfetch-__VER__-x86_64-apple-darwin.tar.gz` | macOS, Intel |
           EOF
           sed -i "s/__VER__/${GITHUB_REF_NAME}/g" notes.md
 

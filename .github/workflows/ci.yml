@@ -25,10 +25,6 @@ env:
 jobs:
   check:
     name: build, test and lint
-    # No OS matrix on purpose. animfetch reads /proc and /sys, calls fork(2),
-    # statvfs(3) and tcgetpgrp(3), and needs a controlling terminal. It is
-    # Linux-only by design (see the module docs in src/fetch.rs), so the other
-    # runners would fail to build rather than tell us anything useful.
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -156,3 +152,61 @@ jobs:
           fi
 
           echo "smoke tests passed"
+
+  macos:
+    name: macos build and smoke test
+    # The system-information backend is per-platform (src/fetch/macos.rs), and
+    # its sysctl and Mach struct layouts are declared by hand. Compiling proves
+    # the declarations parse; only a real Darwin kernel proves the numbers make
+    # sense, which is what the percentage check at the end is for.
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - name: Test
+        run: cargo test --release --locked
+
+      - name: Intel target still compiles
+        run: |
+          rustup target add x86_64-apple-darwin
+          cargo check --target x86_64-apple-darwin --locked
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin=./target/release/animfetch
+          # macOS ships no GNU timeout; perl's alarm is the portable bound.
+          run() { perl -e 'alarm shift @ARGV; exec @ARGV or die "exec: $!"' 30 "$bin" "$@"; }
+
+          run --version
+          run --list
+
+          output=$(run --once)
+          if [ -z "$output" ]; then
+            echo "::error::--once printed nothing"
+            exit 1
+          fi
+          printf '%s\n' "$output"
+
+          # A wrong Mach struct layout compiles fine and prints nonsense. Every
+          # usage percentage the fetch shows must be a real percentage.
+          bad=$(printf '%s\n' "$output" | grep -oE '\([0-9]+%\)' | tr -d '(%)' | awk '$1 > 100' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::impossible percentage in the fetch output: $bad"
+            exit 1
+          fi
+
+          names=$(run --list | awk '{print ($1 == "*") ? $2 : $1}')
+          for name in $names; do
+            run --once --animation "$name" > /dev/null
+          done
+          echo "$(printf '%s\n' $names | wc -l | tr -d ' ') animations load on macOS"

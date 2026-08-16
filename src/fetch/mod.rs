@@ -14,11 +14,16 @@ mod linux;
 #[cfg(target_os = "linux")]
 use linux as sys;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos as sys;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 compile_error!(
-    "animfetch currently supports Linux only. The system-information backend is \
-     src/fetch/linux.rs; a port means writing a sibling of it that exposes the \
-     same `collect` and `hostname`."
+    "animfetch supports Linux and macOS. The system-information backends live \
+     in src/fetch/; a port means writing a sibling of linux.rs that exposes \
+     the same `collect` and `hostname`."
 );
 
 /// One info row. An empty `label` spans the full width (the colour swatches).
@@ -57,6 +62,9 @@ fn arch() -> Option<String> {
     Some(std::env::consts::ARCH.to_string()).filter(|s| !s.is_empty())
 }
 
+// Only the Linux backend walks the process tree past the shell; the tests
+// exercise it everywhere, so it stays shared rather than moving into linux.rs.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn is_shell(name: &str) -> bool {
     // Login shells appear as "-bash".
     let name = name.trim_start_matches('-');

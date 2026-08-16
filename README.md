@@ -2,13 +2,14 @@
 <div align="center">
 
 An animated system fetch you can work inside. The art stays pinned at the top of
-the screen while your prompt and command output scroll below it. Linux only.
+the screen while your prompt and command output scroll below it. Linux and
+macOS.
 
 
 [![version](https://img.shields.io/github/v/release/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/releases)
 [![stars](https://img.shields.io/github/stars/Andrew-Velox/animfetch?label=stars&color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch)
 [![license](https://img.shields.io/github/license/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-Linux-5cd5fb?style=flat-square&logo=linux&logoColor=white)](https://github.com/Andrew-Velox/animfetch)
+[![platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-5cd5fb?style=flat-square)](https://github.com/Andrew-Velox/animfetch)
 [![issues](https://img.shields.io/github/issues/Andrew-Velox/animfetch?color=5cd5fb&style=flat-square)](https://github.com/Andrew-Velox/animfetch/issues)<!-- loc-start -->
 <!-- ![Lines of Rust](https://img.shields.io/badge/lines_of_Rust-4307-orange?style=flat-square) -->
 
@@ -41,14 +42,15 @@ Arch Linux:
 paru -S animfetch-bin      # or animfetch-git to build from source
 ```
 
-Any Linux, static binary, no Rust needed:
+Any Linux or macOS, prebuilt binary, no Rust needed:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
 ```
 
 Goes to `~/.local/bin`, or `/usr/local/bin` as root; `ANIMFETCH_BINDIR`
-overrides. Tarballs are on the [releases page][releases].
+overrides. Tarballs are on the [releases page][releases]. macOS support is
+new; if something looks off there, please open an issue.
 
 From source, with Rust 1.88 or newer:
 

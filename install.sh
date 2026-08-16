@@ -1,7 +1,8 @@
 #!/bin/sh
 # Install animfetch from a GitHub Release.
 #
-# Downloads a static binary, so this needs no Rust toolchain and no compiler.
+# Downloads a prebuilt binary, so this needs no Rust toolchain and no
+# compiler. Linux and macOS.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Andrew-Velox/animfetch/main/install.sh | sh
 #
@@ -27,13 +28,23 @@ note() {
 # What are we installing, and where
 # ---------------------------------------------------------------------------
 
-[ "$(uname -s)" = Linux ] || die "Linux only (this is $(uname -s)); animfetch reads /proc and /sys"
-
-case "$(uname -m)" in
-	x86_64 | amd64) target=x86_64-unknown-linux-musl ;;
-	aarch64 | arm64) target=aarch64-unknown-linux-musl ;;
-	*) die "no prebuilt binary for $(uname -m); install from source instead:
+case "$(uname -s)" in
+	Linux)
+		case "$(uname -m)" in
+			x86_64 | amd64) target=x86_64-unknown-linux-musl ;;
+			aarch64 | arm64) target=aarch64-unknown-linux-musl ;;
+			*) die "no prebuilt Linux binary for $(uname -m); install from source instead:
   cargo install --locked --git https://github.com/$REPO" ;;
+		esac
+		;;
+	Darwin)
+		case "$(uname -m)" in
+			arm64) target=aarch64-apple-darwin ;;
+			x86_64) target=x86_64-apple-darwin ;;
+			*) die "no prebuilt macOS binary for $(uname -m)" ;;
+		esac
+		;;
+	*) die "unsupported platform $(uname -s); animfetch runs on Linux and macOS" ;;
 esac
 
 if [ -n "${ANIMFETCH_BINDIR:-}" ]; then
@@ -91,12 +102,21 @@ fetch "$base/$name.tar.gz" "$tmp/$name.tar.gz" ||
 
 # Not fatal if the checksum file is missing, since an early release may not
 # have one, but a checksum that is present and wrong stops the install.
+# sha256sum on Linux, shasum on macOS; same output format either way.
+if command -v sha256sum >/dev/null 2>&1; then
+	sha256() { sha256sum "$1"; }
+elif command -v shasum >/dev/null 2>&1; then
+	sha256() { shasum -a 256 "$1"; }
+else
+	sha256() { return 1; }
+fi
+
 if fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null &&
 	[ -s "$tmp/SHA256SUMS" ] &&
-	command -v sha256sum >/dev/null 2>&1; then
+	sha256 /dev/null >/dev/null 2>&1; then
 	expected=$(sed -n "s|  *\**$name\.tar\.gz\$||p" "$tmp/SHA256SUMS" | head -1)
 	if [ -n "$expected" ]; then
-		actual=$(sha256sum "$tmp/$name.tar.gz" | cut -d' ' -f1)
+		actual=$(sha256 "$tmp/$name.tar.gz" | cut -d' ' -f1)
 		[ "$expected" = "$actual" ] || die "checksum mismatch for $name.tar.gz
   expected $expected
   got      $actual"

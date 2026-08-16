@@ -1,6 +1,6 @@
 [package]
 name = "animfetch"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 # Let chains, which the loading and terminal-size paths both use. Stated so an
 # older toolchain fails with a version error rather than a syntax one. The
