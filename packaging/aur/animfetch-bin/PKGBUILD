@@ -19,8 +19,8 @@ conflicts=("$_pkgname")
 source_x86_64=("$_pkgname-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/$_pkgname-v$pkgver-x86_64-unknown-linux-musl.tar.gz")
 source_aarch64=("$_pkgname-$pkgver-aarch64.tar.gz::$url/releases/download/v$pkgver/$_pkgname-v$pkgver-aarch64-unknown-linux-musl.tar.gz")
 # Refresh with `updpkgsums` on every version bump.
-sha256sums_x86_64=('SKIP')
-sha256sums_aarch64=('SKIP')
+sha256sums_x86_64=('a8614e0536de5cc511a2c138f5ad6de85603f1cc17be44a518439bcfa1ec3cd6')
+sha256sums_aarch64=('a8ba243455c3fa30999cfcf974fc95c8742db9ee28b6a1288f14734199f24c29')
 
 package() {
 	# $CARCH is the leading component of the target triple for both
