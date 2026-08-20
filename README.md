@@ -30,7 +30,8 @@ macOS.
 |tree|boxing|chicken-run|deer-run|horse-run|
 | ![](.github/assets/tree.gif) | ![](.github/assets/boxing.gif) | ![](.github/assets/chicken-run.gif) | ![](.github/assets/deer-run.gif) | ![](.github/assets/horse-run.gif) |
 |squirrel-run|earth|saturn|||
-| ![](.github/assets/squirrel-run.gif) | ![](.github/assets/earth.gif) | ![](.github/assets/saturn.gif) | | |
+| ![](.github/assets/squirrel-run.gif) | ![](.github/assets/earth.gif) | ![](.github/assets/saturn.gif) | ![](.github/assets/rocket.gif) | ![](.github/assets/fire.gif) |
+| ![](.github/assets/morty-dance.gif) | ![](.github/assets/bird.gif) |
 
 Pick one with `-a <name>`, or set the default with `--set <name>`.
 
