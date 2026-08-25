@@ -59,8 +59,7 @@ pub fn hostname() -> String {
 fn os() -> Option<String> {
     // sw_vers reads this plist; reading it directly skips the subprocess. The
     // format is stable enough that a plain scan beats a plist parser.
-    let plist =
-        fs::read_to_string("/System/Library/CoreServices/SystemVersion.plist").ok()?;
+    let plist = fs::read_to_string("/System/Library/CoreServices/SystemVersion.plist").ok()?;
     let name = plist_value(&plist, "ProductName").unwrap_or_else(|| "macOS".into());
     let version = plist_value(&plist, "ProductVersion")?;
 
@@ -145,13 +144,31 @@ fn sysctl_string(name: &str) -> Option<String> {
     let mut len: libc::size_t = 0;
 
     // SAFETY: a null output buffer asks only for the required length.
-    if unsafe { libc::sysctlbyname(cname.as_ptr(), std::ptr::null_mut(), &mut len, std::ptr::null_mut(), 0) } != 0 {
+    if unsafe {
+        libc::sysctlbyname(
+            cname.as_ptr(),
+            std::ptr::null_mut(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
         return None;
     }
 
     let mut buf = vec![0u8; len];
     // SAFETY: `buf` is exactly the size the kernel just reported.
-    if unsafe { libc::sysctlbyname(cname.as_ptr(), buf.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0) } != 0 {
+    if unsafe {
+        libc::sysctlbyname(
+            cname.as_ptr(),
+            buf.as_mut_ptr().cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
         return None;
     }
 
@@ -175,7 +192,13 @@ fn sysctl_struct<T: Copy>(name: &str) -> Option<T> {
     // SAFETY: the buffer is exactly `len` bytes and the kernel writes at most
     // that; failure and truncation are both reported.
     let ok = unsafe {
-        libc::sysctlbyname(cname.as_ptr(), value.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0)
+        libc::sysctlbyname(
+            cname.as_ptr(),
+            value.as_mut_ptr().cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
     } == 0;
 
     if !ok || len != std::mem::size_of::<T>() {
@@ -248,7 +271,12 @@ fn vm_statistics() -> Option<VmStatistics64> {
     // SAFETY: `stats` is exactly `count` machine words and the kernel writes at
     // most that many; KERN_SUCCESS (0) is required before reading it back.
     let ok = unsafe {
-        host_statistics64(mach_host_self(), HOST_VM_INFO64, stats.as_mut_ptr().cast(), &mut count)
+        host_statistics64(
+            mach_host_self(),
+            HOST_VM_INFO64,
+            stats.as_mut_ptr().cast(),
+            &mut count,
+        )
     } == 0;
 
     // SAFETY: the kernel reported success, so the struct is initialised.

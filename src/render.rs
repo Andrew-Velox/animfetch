@@ -57,7 +57,10 @@ fn reset(out: &mut String, cfg: &Config) {
 enum Row<'a> {
     Title(&'a str),
     Rule(usize),
-    Pair { label: &'a str, value: &'a str },
+    Pair {
+        label: &'a str,
+        value: &'a str,
+    },
     /// Pre-coloured content passed through untouched (the palette swatches).
     Raw(&'a str),
 }
@@ -80,7 +83,14 @@ pub struct Scene<'a> {
 /// Build the fetch pane: art on the left, info on the right. The prompt isn't
 /// part of it; that lives below, in the scroll region.
 pub fn compose(scene: &Scene<'_>, cfg: &Config) -> Vec<String> {
-    let &Scene { art, art_w, title, items, phase, width: avail_w } = scene;
+    let &Scene {
+        art,
+        art_w,
+        title,
+        items,
+        phase,
+        width: avail_w,
+    } = scene;
 
     let rows = info_rows(title, items, cfg);
 
@@ -107,7 +117,9 @@ pub fn compose(scene: &Scene<'_>, cfg: &Config) -> Vec<String> {
         let info_row = y.checked_sub(info_top).and_then(|i| rows.get(i));
         if let Some(row) = info_row {
             // Pad from the art's visible width; escapes occupy no columns.
-            let drawn = art_row.map_or(0, |r| r.width());
+            // `visible_width` rather than `width()`: raw-coloured art carries
+            // SGR bytes that a plain width would count as columns.
+            let drawn = art_row.map_or(0, |r| visible_width(r));
             for _ in drawn..info_col {
                 line.push(' ');
             }
@@ -134,7 +146,10 @@ fn info_rows<'a>(title: &'a str, items: &'a [Item], cfg: &Config) -> Vec<Row<'a>
                 rows.push(Row::Raw(&item.value));
             }
         } else {
-            rows.push(Row::Pair { label: item.label, value: &item.value });
+            rows.push(Row::Pair {
+                label: item.label,
+                value: &item.value,
+            });
         }
     }
     rows
@@ -146,7 +161,10 @@ fn paint_art_row(out: &mut String, row: &str, y: usize, height: usize, cfg: &Con
         return;
     }
 
-    if !cfg.color || cfg.gradient.is_empty() {
+    // A row carrying its own escapes is authored-colour art (style `raw` over
+    // frames with embedded SGR): pass it through untouched, or the gradient
+    // would fight every per-cell colour.
+    if row.contains('\x1b') || !cfg.color || cfg.gradient.is_empty() {
         out.push_str(row);
         return;
     }
@@ -246,7 +264,12 @@ const END_SYNC: &str = "\x1b[?2026l";
 
 impl Pane {
     pub fn new() -> Self {
-        Self { prev: Vec::new(), needs_clear: true, painted_h: 0, origin_mode: false }
+        Self {
+            prev: Vec::new(),
+            needs_clear: true,
+            painted_h: 0,
+            origin_mode: false,
+        }
     }
 
     /// Declare that the terminal is in origin mode, so painting can opt out of
@@ -263,7 +286,12 @@ impl Pane {
 
     /// Draw `lines` into rows `1..=height`, as one write so nothing can
     /// interleave with it.
-    pub fn paint(&mut self, out: &mut impl Write, lines: &[String], height: usize) -> io::Result<()> {
+    pub fn paint(
+        &mut self,
+        out: &mut impl Write,
+        lines: &[String],
+        height: usize,
+    ) -> io::Result<()> {
         let visible = lines.len().min(height);
         let mut buf = String::with_capacity(visible * 96);
 
@@ -338,7 +366,14 @@ mod tests {
         items: &'a [Item],
         width: usize,
     ) -> Scene<'a> {
-        Scene { art, art_w, title, items, phase: 0, width }
+        Scene {
+            art,
+            art_w,
+            title,
+            items,
+            phase: 0,
+            width,
+        }
     }
 
     fn strip_ansi(s: &str) -> String {
@@ -373,16 +408,29 @@ mod tests {
         let cfg = plain_cfg();
         let art = vec!["####".to_string(), "#".to_string()];
         let items = vec![
-            Item { label: "OS", value: "Arch".into() },
-            Item { label: "CPU", value: "Ryzen".into() },
-            Item { label: "WM", value: "Hyprland".into() },
+            Item {
+                label: "OS",
+                value: "Arch".into(),
+            },
+            Item {
+                label: "CPU",
+                value: "Ryzen".into(),
+            },
+            Item {
+                label: "WM",
+                value: "Hyprland".into(),
+            },
         ];
 
         let out = compose(&scene(&art, 4, "me@host", &items, 80), &cfg);
         let cols: Vec<usize> = out
             .iter()
             .filter(|l| !l.trim().is_empty())
-            .map(|l| strip_ansi(l).find(|c: char| !c.is_whitespace()).unwrap_or(0))
+            .map(|l| {
+                strip_ansi(l)
+                    .find(|c: char| !c.is_whitespace())
+                    .unwrap_or(0)
+            })
             .collect();
 
         // Every info-bearing row must start at art_w + gap == 6, except rows
@@ -391,13 +439,55 @@ mod tests {
     }
 
     #[test]
+    fn info_padding_ignores_escapes_in_raw_coloured_art() {
+        // Art rows with embedded SGR must measure by visible columns only.
+        let cfg = plain_cfg();
+        let art = vec!["\x1b[38;2;9;9;9m####\x1b[0m".to_string(), "#".to_string()];
+        let items = vec![Item {
+            label: "OS",
+            value: "Arch".into(),
+        }];
+        let out = compose(&scene(&art, 4, "me@host", &items, 80), &cfg);
+
+        let info_line = out.iter().find(|l| l.contains("OS")).unwrap();
+        let stripped = strip_ansi(info_line);
+        assert_eq!(stripped.find("OS"), Some(6), "info drifted: {stripped:?}");
+    }
+
+    #[test]
+    fn gradient_is_skipped_for_rows_carrying_authored_colour() {
+        let mut cfg = plain_cfg();
+        cfg.gradient = Gradient::new(vec![Rgb(255, 0, 0)]);
+        cfg.color = true;
+
+        let plain_row = "##";
+        let colored_row = "\x1b[38;2;1;2;3m##\x1b[0m";
+
+        let mut plain_out = String::new();
+        super::paint_art_row(&mut plain_out, plain_row, 0, 1, &cfg, 0);
+        assert!(
+            plain_out.contains("\x1b[38;2;255;0;0m"),
+            "gradient applies to plain"
+        );
+
+        let mut colored_out = String::new();
+        super::paint_art_row(&mut colored_out, colored_row, 0, 1, &cfg, 0);
+        assert_eq!(colored_out, colored_row, "authored colour must win");
+    }
+
+    #[test]
     fn without_art_the_info_pane_starts_at_column_zero() {
         let cfg = plain_cfg();
-        let items = vec![Item { label: "OS", value: "Arch".into() }];
+        let items = vec![Item {
+            label: "OS",
+            value: "Arch".into(),
+        }];
         let out = compose(&scene(&[], 0, "me@host", &items, 30), &cfg);
 
         assert!(
-            out.iter().filter(|l| !l.trim().is_empty()).all(|l| !l.starts_with(' ')),
+            out.iter()
+                .filter(|l| !l.trim().is_empty())
+                .all(|l| !l.starts_with(' ')),
             "unexpected indent: {out:?}"
         );
     }
@@ -412,7 +502,11 @@ mod tests {
         let art = vec!["####".to_string()];
         let out = compose(&scene(&art, 4, "me@host", &items, 20), &cfg);
         for line in &out {
-            assert!(strip_ansi(line).width() <= 20, "too wide: {:?}", strip_ansi(line));
+            assert!(
+                strip_ansi(line).width() <= 20,
+                "too wide: {:?}",
+                strip_ansi(line)
+            );
         }
     }
 
@@ -436,7 +530,10 @@ mod tests {
         pane.paint(&mut buf, &["a".into()], 4).unwrap();
 
         let written = String::from_utf8(buf).unwrap();
-        assert!(written.starts_with("\x1b[?2026h\x1b7\x1b[?6l"), "{written:?}");
+        assert!(
+            written.starts_with("\x1b[?2026h\x1b7\x1b[?6l"),
+            "{written:?}"
+        );
         assert!(written.ends_with("\x1b[?6h\x1b8\x1b[?2026l"), "{written:?}");
 
         // The default pane must not emit them at all.
@@ -454,9 +551,15 @@ mod tests {
         screen.paint(&mut buf, &["a".into()], 3).unwrap();
 
         let written = String::from_utf8(buf).unwrap();
-        assert!(!written.contains("\x1b[2J"), "cleared whole screen: {written:?}");
+        assert!(
+            !written.contains("\x1b[2J"),
+            "cleared whole screen: {written:?}"
+        );
         assert!(written.contains("\x1b[3;1H\x1b[2K"));
-        assert!(!written.contains("\x1b[4;1H"), "touched a row below the pane");
+        assert!(
+            !written.contains("\x1b[4;1H"),
+            "touched a row below the pane"
+        );
     }
 
     #[test]
@@ -464,14 +567,21 @@ mod tests {
         let mut screen = Pane::new();
         let mut buf = Vec::new();
 
-        screen.paint(&mut buf, &["a".into(), "b".into()], 10).unwrap();
+        screen
+            .paint(&mut buf, &["a".into(), "b".into()], 10)
+            .unwrap();
         buf.clear();
 
         // Second line changes; the first must not be rewritten.
-        screen.paint(&mut buf, &["a".into(), "c".into()], 10).unwrap();
+        screen
+            .paint(&mut buf, &["a".into(), "c".into()], 10)
+            .unwrap();
         let written = String::from_utf8(buf).unwrap();
         assert!(written.contains('c'));
-        assert!(!written.contains('a'), "unchanged line was repainted: {written:?}");
+        assert!(
+            !written.contains('a'),
+            "unchanged line was repainted: {written:?}"
+        );
     }
 
     #[test]
@@ -479,7 +589,9 @@ mod tests {
         let mut screen = Pane::new();
         let mut buf = Vec::new();
 
-        screen.paint(&mut buf, &["a".into(), "b".into(), "c".into()], 10).unwrap();
+        screen
+            .paint(&mut buf, &["a".into(), "b".into(), "c".into()], 10)
+            .unwrap();
         buf.clear();
 
         screen.paint(&mut buf, &["a".into()], 10).unwrap();

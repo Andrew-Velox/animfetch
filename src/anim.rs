@@ -11,6 +11,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use crate::color::{Rgb, Sgr};
+
 /// The animation used when nothing else is configured.
 pub const DEFAULT_NAME: &str = "cat-run";
 
@@ -24,32 +26,62 @@ pub struct Frame {
     width: usize,
     height: usize,
     ink: Vec<bool>,
-    /// The characters as authored. Every other style throws these away and
-    /// works from `ink`, but `Ink::Raw` draws the art exactly as written.
-    art: Vec<char>,
-    /// Blank cells enclosed by ink (an eye, a nostril) rather than background.
-    /// Part of the drawing, so preserved rather than averaged.
+    /// Characters as authored, plus any foreground colour the author set.
+    art: Vec<(char, Option<Rgb>)>,
     hole: Vec<bool>,
 }
 
 impl Frame {
     fn parse(text: &str) -> Self {
         let height = text.lines().count();
-        let width = text.lines().map(|line| line.chars().count()).max().unwrap_or(0);
+        let width = text
+            .lines()
+            .map(|l| crate::color::strip_sgr(l).chars().count())
+            .max()
+            .unwrap_or(0);
 
-        // Straight into the rectangle; short lines keep their padding.
         let mut ink = vec![false; width * height];
-        let mut art = vec![' '; width * height];
+        let mut art = vec![(' ', None); width * height];
         for (y, line) in text.lines().enumerate() {
             let base = y * width;
-            for (i, c) in line.chars().enumerate().take(width) {
-                ink[base + i] = !c.is_whitespace();
-                art[base + i] = c;
+            let mut x = 0usize;
+            let mut fg: Option<Rgb> = None;
+            let mut chars = line.chars();
+            while let Some(c) = chars.next() {
+                if c == '\x1b' {
+                    // Consume the sequence; update fg state if it is one we know.
+                    let mut params = String::new();
+                    let mut final_byte = '\0';
+                    for c in chars.by_ref() {
+                        if c.is_ascii_alphabetic() {
+                            final_byte = c;
+                            break;
+                        }
+                        params.push(c);
+                    }
+                    if final_byte == 'm' && params.starts_with('[') {
+                        match crate::color::parse_sgr(&params[1..]) {
+                            Sgr::Reset => fg = None,
+                            Sgr::Fg(rgb) => fg = Some(rgb),
+                            Sgr::Ignore => {}
+                        }
+                    }
+                } else if x < width {
+                    ink[base + x] = !c.is_whitespace();
+                    art[base + x] = (c, fg);
+                    x += 1;
+                }
             }
         }
 
         let hole = Self::enclosed_holes(&ink, width, height);
-        Self { width, height, ink, art, hole }
+        Self {
+            width,
+            height,
+            ink,
+            art,
+            hole,
+        }
     }
 
     /// Blank cells unreachable from the border. Flooding inward is what tells a
@@ -83,7 +115,9 @@ impl Frame {
             }
         }
 
-        let mut hole: Vec<bool> = (0..width * height).map(|i| !ink[i] && !outside[i]).collect();
+        let mut hole: Vec<bool> = (0..width * height)
+            .map(|i| !ink[i] && !outside[i])
+            .collect();
         Self::drop_specks(&mut hole, width, height);
         hole
     }
@@ -149,22 +183,48 @@ impl Frame {
         if out_w == 0 || out_h == 0 || self.width == 0 || self.height == 0 {
             return Vec::new();
         }
-
         (0..out_h)
             .map(|oy| {
-                let mut line = String::with_capacity(out_w * 3);
+                let mut line = String::with_capacity(out_w * 8);
+                // Length up to the last non-space cell. Escapes are not spaces,
+                // so a line ending in one still measures by its last glyph.
+                let mut keep_len = 0usize;
+                // The sequence currently open on `line`, so runs of one colour
+                // emit it once and drops back to plain close what they opened.
+                let mut open: Option<Rgb> = None;
                 for ox in 0..out_w {
-                    line.push(self.cell(ox, oy, out_w, out_h, ink));
+                    self.write_cell(&mut line, ox, oy, out_w, out_h, ink, &mut open);
+                    if line.chars().last().is_some_and(|c| c != ' ') {
+                        keep_len = line.len();
+                    }
                 }
                 // Trailing blanks cost bytes on every repaint and render
                 // identically to nothing.
-                line.truncate(line.trim_end().len());
+                line.truncate(keep_len);
+                if open.is_some() {
+                    line.push_str(crate::color::RESET);
+                }
                 line
             })
             .collect()
     }
 
-    fn cell(&self, ox: usize, oy: usize, out_w: usize, out_h: usize, ink: Ink<'_>) -> char {
+    /// Append the glyph for output cell `(ox, oy)` to `out`, with its authored
+    /// colour when `ink` asks for one. `open` tracks the colour currently in
+    /// effect on `line`, so transitions emit only what changed.
+    // The four geometry parameters mirror `coverage`; bundling them would
+    // touch every resampling path for no clarity.
+    #[allow(clippy::too_many_arguments)]
+    fn write_cell(
+        &self,
+        out: &mut String,
+        ox: usize,
+        oy: usize,
+        out_w: usize,
+        out_h: usize,
+        ink: Ink<'_>,
+        open: &mut Option<Rgb>,
+    ) {
         match ink {
             Ink::Half => {
                 // Two stacked samples per cell, which come out square, so
@@ -173,10 +233,10 @@ impl Frame {
                 let solid = |y: usize| self.coverage(ox, y, out_w, rows) >= 0.5;
 
                 match (solid(oy * 2), solid(oy * 2 + 1)) {
-                    (true, true) => '█',
-                    (true, false) => '▀',
-                    (false, true) => '▄',
-                    (false, false) => ' ',
+                    (true, true) => out.push('█'),
+                    (true, false) => out.push('▀'),
+                    (false, true) => out.push('▄'),
+                    (false, false) => out.push(' '),
                 }
             }
             Ink::Quad => {
@@ -188,20 +248,54 @@ impl Frame {
                     | (solid(x + 1, y) as usize) << 2
                     | (solid(x, y + 1) as usize) << 1
                     | (solid(x + 1, y + 1) as usize);
-                QUADRANTS[bits]
+                out.push(QUADRANTS[bits]);
             }
-            Ink::Raw => {
-                // Nearest neighbour, not coverage: averaging characters is
-                // meaningless, and at 1:1 this reproduces the source exactly.
-                let sx = (ox * self.width / out_w.max(1)).min(self.width.saturating_sub(1));
-                let sy = (oy * self.height / out_h.max(1)).min(self.height.saturating_sub(1));
-                self.art.get(sy * self.width + sx).copied().unwrap_or(' ')
+            Ink::Raw { color } => {
+                // Pick an inked source cell from the span this output cell
+                // covers, nearest the span's centre. A blind fixed sample
+                // drops thin strokes when downscaling — a face, an arm —
+                // while any inked cell in the span keeps them. At 1:1 the
+                // span is one cell, which reproduces the source exactly.
+                let (x0, x1) = span(ox, out_w, self.width);
+                let (y0, y1) = span(oy, out_h, self.height);
+                let (cx, cy) = ((x0 + x1 - 1) / 2, (y0 + y1 - 1) / 2);
+                let mut pick: Option<(char, Option<Rgb>)> = None;
+                let mut best = usize::MAX;
+                for y in y0..y1 {
+                    for x in x0..x1 {
+                        if let Some(&(c, rgb)) = self.art.get(y * self.width + x)
+                            && !c.is_whitespace()
+                        {
+                            let d = x.abs_diff(cx) + y.abs_diff(cy);
+                            if d < best {
+                                best = d;
+                                pick = Some((c, rgb));
+                            }
+                        }
+                    }
+                }
+
+                if let Some((c, rgb)) = pick {
+                    let target = if color { rgb } else { None };
+                    if *open != target {
+                        if open.is_some() {
+                            out.push_str(crate::color::RESET);
+                        }
+                        if let Some(rgb) = target {
+                            rgb.fg(out);
+                        }
+                        *open = target;
+                    }
+                    out.push(c);
+                } else {
+                    out.push(' ');
+                }
             }
             Ink::Ramp(ramp) => {
                 debug_assert!(!ramp.is_empty());
                 let top = (ramp.len() - 1) as f32;
                 let coverage = self.coverage(ox, oy, out_w, out_h);
-                ramp[(coverage * top).round() as usize]
+                out.push(ramp[(coverage * top).round() as usize]);
             }
         }
     }
@@ -219,12 +313,16 @@ pub enum Ink<'a> {
     Ramp(&'a [char]),
     /// The characters exactly as authored, nearest-neighbour sampled. For art
     /// whose glyphs carry the picture, where a coverage mask discards it.
-    Raw,
+    Raw {
+        /// Emit each cell's authored colour, when it has one.
+        color: bool,
+    },
 }
 
 /// Indexed by the four samples as bits: TL, TR, BL, BR.
 const QUADRANTS: [char; 16] = [
-    ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟', '▘', '▚', '▌', '▙', '▀', '▜', '▛', '█',];
+    ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟', '▘', '▚', '▌', '▙', '▀', '▜', '▛', '█',
+];
 
 /// Orthogonal neighbours of `i`, clipped at the edges. Four-connectivity means
 /// a diagonal touch isn't an opening, so a diagonally bounded hole stays one.
@@ -267,7 +365,11 @@ impl Animation {
         let width = frames.iter().map(|f| f.width).max().unwrap_or(0);
         let height = frames.iter().map(|f| f.height).max().unwrap_or(0);
 
-        Some(Self { frames, width, height })
+        Some(Self {
+            frames,
+            width,
+            height,
+        })
     }
 
     /// Load `name`, preferring a directory on disk over the bundled copy, so
@@ -335,7 +437,11 @@ pub fn list(dir: Option<&Path>) -> Vec<Entry> {
     if let Some(dir) = dir
         && let Ok(read) = fs::read_dir(dir)
     {
-        for path in read.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.is_dir()) {
+        for path in read
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+        {
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
@@ -344,7 +450,11 @@ pub fn list(dir: Option<&Path>) -> Vec<Entry> {
                 continue;
             }
 
-            let entry = Entry { name: name.to_string(), frames, path: Some(path.clone()) };
+            let entry = Entry {
+                name: name.to_string(),
+                frames,
+                path: Some(path.clone()),
+            };
             match entries.iter_mut().find(|e| e.name == name) {
                 Some(existing) => *existing = entry,
                 None => entries.push(entry),
@@ -371,6 +481,7 @@ fn read_frame_dir(dir: &Path) -> io::Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::strip_sgr;
 
     const RAMP: Ink<'static> = Ink::Ramp(&[' ', '░', '▒', '▓', '█']);
 
@@ -428,8 +539,14 @@ mod tests {
     #[test]
     fn blank_canvas_renders_empty_lines() {
         let frame = Frame::parse("    \n    \n");
-        assert_eq!(frame.scale(2, 2, RAMP), vec!["".to_string(), "".to_string()]);
-        assert_eq!(frame.scale(2, 2, Ink::Half), vec!["".to_string(), "".to_string()]);
+        assert_eq!(
+            frame.scale(2, 2, RAMP),
+            vec!["".to_string(), "".to_string()]
+        );
+        assert_eq!(
+            frame.scale(2, 2, Ink::Half),
+            vec!["".to_string(), "".to_string()]
+        );
     }
 
     #[test]
@@ -444,7 +561,11 @@ mod tests {
             ("##\n##\n", '█'),
         ] {
             let frame = Frame::parse(&art.replace('.', " "));
-            assert_eq!(frame.scale(1, 1, Ink::Quad), vec![expected.to_string()], "{art:?}");
+            assert_eq!(
+                frame.scale(1, 1, Ink::Quad),
+                vec![expected.to_string()],
+                "{art:?}"
+            );
         }
     }
 
@@ -456,12 +577,16 @@ mod tests {
             row[12] = ' ';
             row[13] = ' ';
         }
-        let text: String = rows.iter().map(|r| r.iter().collect::<String>() + "\n").collect();
+        let text: String = rows
+            .iter()
+            .map(|r| r.iter().collect::<String>() + "\n")
+            .collect();
         let frame = Frame::parse(&text);
 
         let quad = frame.scale(8, 4, Ink::Quad);
         assert!(
-            quad.iter().all(|l| l.contains('▐') || l.contains('▌') || l.contains(' ')),
+            quad.iter()
+                .all(|l| l.contains('▐') || l.contains('▌') || l.contains(' ')),
             "hole lost in quad mode: {quad:?}"
         );
     }
@@ -472,7 +597,9 @@ mod tests {
         let frame = Frame::parse("##  \n#  #\n  ##\n####\n");
         let out = frame.scale(4, 2, Ink::Half);
         assert!(
-            out.iter().flat_map(|l| l.chars()).all(|c| " ▀▄█".contains(c)),
+            out.iter()
+                .flat_map(|l| l.chars())
+                .all(|c| " ▀▄█".contains(c)),
             "{out:?}"
         );
     }
@@ -510,8 +637,10 @@ mod tests {
                 row[10 + offset] = ' ';
                 row[11 + offset] = ' ';
             }
-            let text: String =
-                rows.iter().map(|r| r.iter().collect::<String>() + "\n").collect();
+            let text: String = rows
+                .iter()
+                .map(|r| r.iter().collect::<String>() + "\n")
+                .collect();
             let frame = Frame::parse(&text);
 
             for width in [19usize, 23, 25, 31] {
@@ -532,7 +661,10 @@ mod tests {
             row[4] = ' ';
             row[5] = ' ';
         }
-        let text: String = rows.iter().map(|r| r.iter().collect::<String>() + "\n").collect();
+        let text: String = rows
+            .iter()
+            .map(|r| r.iter().collect::<String>() + "\n")
+            .collect();
         let frame = Frame::parse(&text);
 
         let out = frame.scale(12, 4, Ink::Half);
@@ -540,6 +672,91 @@ mod tests {
             out.iter().any(|l| l.contains(' ')),
             "the hole was filled in: {out:?}"
         );
+    }
+
+    #[test]
+    fn escapes_do_not_count_as_cells() {
+        let plain = Frame::parse("# \n# \n");
+        let colored = Frame::parse("\x1b[38;2;1;2;3m#\x1b[0m \n# \n");
+        assert_eq!(colored.width, plain.width);
+        assert_eq!(colored.height, plain.height);
+    }
+
+    #[test]
+    fn raw_colored_emits_what_no_color_strips_to() {
+        // Same art either way; only the escapes differ.
+        let frame = Frame::parse("\x1b[38;2;250;250;250m^\x1b[38;2;230;183;135m-\x1b[0m\n");
+        let on = frame.scale(2, 1, Ink::Raw { color: true });
+        let off = frame.scale(2, 1, Ink::Raw { color: false });
+
+        assert_eq!(strip_sgr(&on[0]), off[0]);
+        assert!(on[0].contains("\x1b[38;2;"));
+        assert!(!off[0].contains('\x1b'));
+        assert!(on[0].ends_with(crate::color::RESET));
+    }
+
+    #[test]
+    fn coloured_cells_keep_their_own_colour_across_blanks() {
+        // A reset mid-line must stop colouring what follows, and 'e' sits in
+        // its own colour while 'cd' carries none.
+        let frame = Frame::parse("\x1b[38;2;9;9;9mab\x1b[0mcd\x1b[38;2;1;1;1me\x1b[0m\n");
+        let out = frame.scale(5, 1, Ink::Raw { color: true });
+
+        assert_eq!(strip_sgr(&out[0]), "abcde");
+        assert!(out[0].contains("\x1b[38;2;9;9;9ma"));
+        assert!(out[0].contains("\x1b[38;2;1;1;1me"));
+        // The segment between the two colours carries no sequence.
+        let between = out[0].split("\x1b[0m").nth(1).unwrap();
+        assert!(between.starts_with("cd"));
+    }
+
+    #[test]
+    fn colored_lines_trim_without_losing_escapes() {
+        // Ink, then trailing blanks: the reset must land after the last glyph,
+        // with no invisible junk behind it that would defeat the frame diff.
+        let frame = Frame::parse("\x1b[38;2;9;9;9m#\x1b[0m   \n");
+        let out = frame.scale(4, 1, Ink::Raw { color: true });
+        assert_eq!(out[0], "\x1b[38;2;9;9;9m#\x1b[0m");
+    }
+
+    #[test]
+    fn whitespace_never_opens_a_colour_sequence() {
+        // Colour state persists across blanks in the source; emitting it for
+        // padding would wrap spaces in escapes for nothing.
+        let frame = Frame::parse("\x1b[38;2;9;9;9m  #\n");
+        let off = frame.scale(3, 1, Ink::Raw { color: false });
+        assert_eq!(off[0], "  #");
+        let on = frame.scale(3, 1, Ink::Raw { color: true });
+        // Bare spaces first, and the colour opens only at the glyph.
+        assert!(on[0].starts_with("  \x1b[38;2;9;9;9m#"), "{on:?}");
+        assert_eq!(strip_sgr(&on[0]), "  #");
+    }
+
+    #[test]
+    fn raw_downscaling_keeps_a_thin_row() {
+        // One inked row in eight: a fixed-position sample reads the top-left
+        // of each block and loses it entirely; picking an inked cell from the
+        // span keeps it.
+        let mut rows = vec![vec![' '; 8]; 8];
+        for cell in rows[1].iter_mut() {
+            *cell = '#';
+        }
+        let text: String = rows
+            .iter()
+            .map(|r| r.iter().collect::<String>() + "\n")
+            .collect();
+        let frame = Frame::parse(&text);
+        let out = frame.scale(2, 2, Ink::Raw { color: false });
+        // The bottom row holds nothing, so it trims to empty.
+        assert_eq!(out, vec!["##".to_string(), "".to_string()], "{out:?}");
+    }
+
+    #[test]
+    fn raw_downscaling_is_exact_at_one_to_one() {
+        let frame = Frame::parse("ab\x1b[38;2;9;9;9mc\n   \n");
+        let out = frame.scale(3, 2, Ink::Raw { color: true });
+        assert_eq!(strip_sgr(&out[0]), "abc");
+        assert_eq!(out[1], "");
     }
 
     #[test]
@@ -561,10 +778,16 @@ mod tests {
             assert_eq!(anim.frames.len(), frames.len(), "{name}");
             // Poses have to be registered against a shared canvas, or the art
             // jitters as it plays.
-            assert!(anim.frames.iter().all(|f| f.height == anim.height), "{name} height");
+            assert!(
+                anim.frames.iter().all(|f| f.height == anim.height),
+                "{name} height"
+            );
             // A single trailing space widens one frame and makes it render
             // narrower than the rest, which reads as a twitch as it plays.
-            assert!(anim.frames.iter().all(|f| f.width == anim.width), "{name} width");
+            assert!(
+                anim.frames.iter().all(|f| f.width == anim.width),
+                "{name} width"
+            );
             assert!(listed.iter().any(|e| e.name == *name && e.path.is_none()));
         }
     }

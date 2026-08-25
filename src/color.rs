@@ -22,7 +22,11 @@ impl Rgb {
 
     fn lerp(self, other: Self, t: f32) -> Self {
         let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
-        Rgb(mix(self.0, other.0), mix(self.1, other.1), mix(self.2, other.2))
+        Rgb(
+            mix(self.0, other.0),
+            mix(self.1, other.1),
+            mix(self.2, other.2),
+        )
     }
 }
 
@@ -38,6 +42,47 @@ fn push_dec(out: &mut String, n: u8) {
 }
 
 pub const RESET: &str = "\x1b[0m";
+
+/// What one `\x1b[...m` sequence asks for.
+pub enum Sgr {
+    Reset,
+    Fg(Rgb),
+    Ignore,
+}
+
+pub fn parse_sgr(params: &str) -> Sgr {
+    // Empty params ("\x1b[m") means reset.
+    let mut parts = params.split(';');
+    match parts.next() {
+        None | Some("") | Some("0") => Sgr::Reset,
+        Some("38") => match parts.collect::<Vec<_>>()[..] {
+            ["2", r, g, b] => match (r.parse(), g.parse(), b.parse()) {
+                (Ok(r), Ok(g), Ok(b)) => Sgr::Fg(Rgb(r, g, b)),
+                _ => Sgr::Ignore,
+            },
+            _ => Sgr::Ignore,
+        },
+        Some(_) => Sgr::Ignore, // 39 (default fg), bold, 256-color, ...
+    }
+}
+
+/// Remove every ANSI escape sequence, leaving only printable characters.
+pub fn strip_sgr(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
 
 /// Parse `#rgb`, `#rrggbb`, or either without the `#`. Matched on bytes, since
 /// a six-byte string from a config may have no char boundary to slice at.
@@ -89,7 +134,9 @@ impl Gradient {
 impl<'de> Deserialize<'de> for Gradient {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let raw = Vec::<String>::deserialize(d)?;
-        Ok(Gradient::new(raw.iter().filter_map(|s| parse_hex(s)).collect()))
+        Ok(Gradient::new(
+            raw.iter().filter_map(|s| parse_hex(s)).collect(),
+        ))
     }
 }
 
@@ -113,7 +160,12 @@ mod tests {
     #[test]
     fn fg_emits_exactly_what_formatting_would() {
         // `fg` is hand-built for speed; this keeps it honest.
-        for rgb in [Rgb(0, 0, 0), Rgb(255, 255, 255), Rgb(1, 10, 100), Rgb(9, 99, 199)] {
+        for rgb in [
+            Rgb(0, 0, 0),
+            Rgb(255, 255, 255),
+            Rgb(1, 10, 100),
+            Rgb(9, 99, 199),
+        ] {
             let mut out = String::new();
             rgb.fg(&mut out);
             let Rgb(r, g, b) = rgb;
@@ -153,5 +205,22 @@ mod tests {
         assert_eq!(g.sample(-5.0), Some(Rgb(0, 0, 0)));
         assert_eq!(g.sample(5.0), Some(Rgb(10, 10, 10)));
         assert_eq!(Gradient::default().sample(0.5), None);
+    }
+
+    #[test]
+    fn sgr_parser_reads_truecolor_and_reset() {
+        assert!(matches!(
+            parse_sgr("38;2;255;128;0"),
+            Sgr::Fg(Rgb(255, 128, 0))
+        ));
+        assert!(matches!(parse_sgr("0"), Sgr::Reset));
+        assert!(matches!(parse_sgr(""), Sgr::Reset));
+        assert!(matches!(parse_sgr("39"), Sgr::Ignore));
+    }
+
+    #[test]
+    fn strip_removes_sequences_but_keeps_art() {
+        assert_eq!(strip_sgr("\x1b[38;2;1;2;3mW\x1b[0m"), "W");
+        assert_eq!(strip_sgr("plain"), "plain");
     }
 }

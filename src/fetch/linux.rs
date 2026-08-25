@@ -8,7 +8,9 @@
 use std::fs;
 use std::path::Path;
 
-use super::{Item, arch, basename_of_env, env, format_usage, humanize_duration, is_shell, swatches};
+use super::{
+    Item, arch, basename_of_env, env, format_usage, humanize_duration, is_shell, swatches,
+};
 use crate::config::Module;
 
 /// Collect the requested modules, skipping ones this machine can't answer.
@@ -49,8 +51,8 @@ pub fn collect(modules: &[Module]) -> Vec<Item> {
 
 fn os() -> Option<String> {
     let release = fs::read_to_string("/etc/os-release").ok()?;
-    let pretty = os_release_field(&release, "PRETTY_NAME")
-        .or_else(|| os_release_field(&release, "NAME"))?;
+    let pretty =
+        os_release_field(&release, "PRETTY_NAME").or_else(|| os_release_field(&release, "NAME"))?;
 
     // `uname -m` without the subprocess.
     match arch() {
@@ -88,7 +90,10 @@ fn packages() -> Option<String> {
 
     // Debian: one stanza per package in the status file.
     if let Ok(status) = fs::read_to_string("/var/lib/dpkg/status") {
-        let n = status.lines().filter(|l| l.starts_with("Package: ")).count();
+        let n = status
+            .lines()
+            .filter(|l| l.starts_with("Package: "))
+            .count();
         if n > 0 {
             return Some(format!("{n} (dpkg)"));
         }
@@ -295,7 +300,11 @@ fn read_prefix(path: &str, limit: u64) -> Option<String> {
     use std::io::Read as _;
 
     let mut buf = Vec::with_capacity(limit as usize);
-    fs::File::open(path).ok()?.take(limit).read_to_end(&mut buf).ok()?;
+    fs::File::open(path)
+        .ok()?
+        .take(limit)
+        .read_to_end(&mut buf)
+        .ok()?;
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
@@ -312,7 +321,10 @@ mod tests {
     #[test]
     fn os_release_strips_quotes_and_picks_the_right_key() {
         let text = "NAME=\"Arch Linux\"\nPRETTY_NAME=\"Arch Linux\"\nID=arch\n";
-        assert_eq!(os_release_field(text, "PRETTY_NAME"), Some("Arch Linux".into()));
+        assert_eq!(
+            os_release_field(text, "PRETTY_NAME"),
+            Some("Arch Linux".into())
+        );
         assert_eq!(os_release_field(text, "ID"), Some("arch".into()));
         assert_eq!(os_release_field(text, "MISSING"), None);
     }
@@ -333,16 +345,17 @@ mod tests {
         let head = read_prefix("/proc/cpuinfo", 4096);
         if let Some(head) = head {
             assert!(head.len() <= 4096);
-            assert!(model_name(&head).is_some(), "model name not in the first 4KiB");
+            assert!(
+                model_name(&head).is_some(),
+                "model name not in the first 4KiB"
+            );
         }
     }
 
     #[test]
     fn the_core_count_agrees_with_what_cpuinfo_lists() {
         // Must still match what counting `processor` lines reported.
-        if let (Some(online), Ok(all)) =
-            (online_cpus(), std::fs::read_to_string("/proc/cpuinfo"))
-        {
+        if let (Some(online), Ok(all)) = (online_cpus(), std::fs::read_to_string("/proc/cpuinfo")) {
             let listed = all.lines().filter(|l| l.starts_with("processor")).count();
             assert_eq!(online, listed);
         }

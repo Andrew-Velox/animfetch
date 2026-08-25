@@ -33,6 +33,18 @@ pub enum ColorSource {
     Palette,
 }
 
+/// Where raw art gets its colour, when its frames carry SGR colours of their
+/// own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArtColor {
+    /// The colours embedded in the frames.
+    #[default]
+    Own,
+    /// Ignore the embedded colours; the gradient paints the art like plain art.
+    Theme,
+}
+
 /// Which rows appear in the info pane, in order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -62,6 +74,8 @@ pub struct Config {
     pub fps: f32,
     /// How the art is drawn. `ramp` only applies when this is `"ramp"`.
     pub style: Style,
+    /// Where raw art's colour comes from: the file's own, or the theme's.
+    pub art_color: ArtColor,
     /// Density ramp, lowest coverage first. Must be at least one character.
     pub ramp: String,
     /// Vertical colour ramp applied down the art.
@@ -100,6 +114,7 @@ impl Default for Config {
             animation: crate::anim::DEFAULT_NAME.into(),
             fps: 12.0,
             style: Style::Half,
+            art_color: ArtColor::Own,
             ramp: " ░▒▓█".into(),
             gradient: Gradient::new(vec![
                 Rgb(0xf5, 0xc9, 0x5c),
@@ -159,18 +174,30 @@ impl Config {
 
     /// Columns the art may occupy, given how many are actually available.
     pub fn width(&self, available: usize) -> usize {
-        if self.width == 0 { available } else { self.width.min(available) }
+        if self.width == 0 {
+            available
+        } else {
+            self.width.min(available)
+        }
     }
 
     /// Rows the fetch may occupy, given how many are actually available.
     pub fn height(&self, available: usize) -> usize {
-        if self.height == 0 { available } else { self.height.min(available) }
+        if self.height == 0 {
+            available
+        } else {
+            self.height.min(available)
+        }
     }
 
     /// The density ramp as characters, never empty.
     pub fn ramp(&self) -> Vec<char> {
         let ramp: Vec<char> = self.ramp.chars().collect();
-        if ramp.is_empty() { vec![' ', '█'] } else { ramp }
+        if ramp.is_empty() {
+            vec![' ', '█']
+        } else {
+            ramp
+        }
     }
 
     /// How to turn coverage into glyphs, for the configured style.
@@ -179,7 +206,11 @@ impl Config {
             Style::Half => crate::anim::Ink::Half,
             Style::Quad => crate::anim::Ink::Quad,
             Style::Ramp => crate::anim::Ink::Ramp(ramp),
-            Style::Raw => crate::anim::Ink::Raw,
+            // `theme` hands the art back plain, so the gradient applies to it
+            // exactly as it would to escape-free art.
+            Style::Raw => crate::anim::Ink::Raw {
+                color: self.color && self.art_color == ArtColor::Own,
+            },
         }
     }
 }
@@ -233,7 +264,11 @@ mod tests {
         std::fs::write(dir.join("config.toml"), "animation = \"tree\"\ngap = = 3\n").unwrap();
 
         let (cfg, warning) = load(Some(&dir));
-        assert_eq!(cfg.animation, Config::default().animation, "should be defaults");
+        assert_eq!(
+            cfg.animation,
+            Config::default().animation,
+            "should be defaults"
+        );
         assert!(warning.is_some(), "a broken config must not fail silently");
 
         std::fs::remove_dir_all(&dir).unwrap();
@@ -265,7 +300,10 @@ mod tests {
         let cfg: Config = toml::from_str("width = 56").unwrap();
         assert_eq!(cfg.width(120), 56);
         assert_eq!(cfg.width(30), 30);
-        assert_eq!(toml::from_str::<Config>("width = 0").unwrap().width(120), 120);
+        assert_eq!(
+            toml::from_str::<Config>("width = 0").unwrap().width(120),
+            120
+        );
     }
 
     #[test]
@@ -282,7 +320,33 @@ mod tests {
     fn style_selects_the_renderer() {
         let cfg: Config = toml::from_str(r#"style = "ramp""#).unwrap();
         assert!(matches!(cfg.ink(&[' ', '#']), crate::anim::Ink::Ramp(_)));
-        assert!(matches!(Config::default().ink(&[' ', '#']), crate::anim::Ink::Half));
+        assert!(matches!(
+            Config::default().ink(&[' ', '#']),
+            crate::anim::Ink::Half
+        ));
+    }
+
+    #[test]
+    fn art_color_selects_whose_colour_raw_art_wears() {
+        let own: Config = toml::from_str(r#"style = "raw""#).unwrap();
+        assert!(matches!(
+            own.ink(&[' ', '#']),
+            crate::anim::Ink::Raw { color: true }
+        ));
+
+        // `theme` hands the art back plain so the gradient applies, but the
+        // global colour switch still wins over both.
+        let theme: Config = toml::from_str("style = \"raw\"\nart_color = \"theme\"").unwrap();
+        assert!(matches!(
+            theme.ink(&[' ', '#']),
+            crate::anim::Ink::Raw { color: false }
+        ));
+
+        let off: Config = toml::from_str("style = \"raw\"\ncolor = false").unwrap();
+        assert!(matches!(
+            off.ink(&[' ', '#']),
+            crate::anim::Ink::Raw { color: false }
+        ));
     }
 
     #[test]
@@ -314,6 +378,10 @@ mod tests {
         // `deny_unknown_fields` means a drifted key breaks the shipped example.
         let text = include_str!("../config.example.toml");
         let cfg: Config = toml::from_str(text).expect("config.example.toml must parse");
-        assert_eq!(cfg.color_source, ColorSource::Config, "the example must not change behaviour");
+        assert_eq!(
+            cfg.color_source,
+            ColorSource::Config,
+            "the example must not change behaviour"
+        );
     }
 }

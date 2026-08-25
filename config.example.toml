@@ -37,10 +37,18 @@ play_seconds = 3.0
 #         patterns in most fonts, which reads as noise along edges.
 #   raw   The art's own characters, exactly as authored. For hand-drawn ASCII
 #         whose glyphs are the picture rather than a silhouette, like `earth`.
-#         It samples rather than averages, so it wants `width` near the art's
-#         own width; shrink it much below that and glyphs drop out. On art
-#         built from solid blocks you will just see those blocks.
+#         When shrinking, it keeps thin strokes by picking an inked cell from
+#         each block rather than a blind fixed sample.
 style = "half"
+
+# Only used when style = "raw" and the frames carry SGR colours of their own.
+#
+#   "own"    show the art's real embedded colours (default)
+#   "theme"  ignore them and paint the art with the gradient above, exactly
+#            like escape-free art
+#
+# The info pane always uses the theme colours either way.
+art_color = "own"
 
 # Only used when style = "ramp". Lowest ink coverage first.
 # Try " .:-=+*#%@" for classic ASCII, or " █" for hard edges.

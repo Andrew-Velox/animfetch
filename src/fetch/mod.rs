@@ -34,7 +34,9 @@ pub struct Item {
 
 /// `user@host`, shown above the info rows.
 pub fn title() -> String {
-    let user = env("USER").or_else(|| env("LOGNAME")).unwrap_or_else(|| "user".into());
+    let user = env("USER")
+        .or_else(|| env("LOGNAME"))
+        .unwrap_or_else(|| "user".into());
     format!("{user}@{}", sys::hostname())
 }
 
@@ -68,7 +70,10 @@ fn arch() -> Option<String> {
 fn is_shell(name: &str) -> bool {
     // Login shells appear as "-bash".
     let name = name.trim_start_matches('-');
-    matches!(name, "sh" | "bash" | "zsh" | "fish" | "dash" | "ksh" | "tcsh" | "nu" | "elvish")
+    matches!(
+        name,
+        "sh" | "bash" | "zsh" | "fish" | "dash" | "ksh" | "tcsh" | "nu" | "elvish"
+    )
 }
 
 fn env(key: &str) -> Option<String> {
@@ -83,7 +88,11 @@ fn basename_of_env(key: &str) -> Option<String> {
 /// `1.2GiB / 15.5GiB (8%)` from KiB inputs.
 fn format_usage(used_kib: u64, total_kib: u64) -> String {
     let pct = (used_kib * 100).checked_div(total_kib).unwrap_or(0);
-    format!("{} / {} ({pct}%)", human_kib(used_kib), human_kib(total_kib))
+    format!(
+        "{} / {} ({pct}%)",
+        human_kib(used_kib),
+        human_kib(total_kib)
+    )
 }
 
 fn human_kib(kib: u64) -> String {

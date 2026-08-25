@@ -111,11 +111,7 @@ pub fn stop() -> io::Result<bool> {
     Ok(true)
 }
 
-fn animate(
-    fetch: &Fetch<'_>,
-    shell_pgid: libc::pid_t,
-    shell_pid: libc::pid_t,
-) -> io::Result<()> {
+fn animate(fetch: &Fetch<'_>, shell_pgid: libc::pid_t, shell_pid: libc::pid_t) -> io::Result<()> {
     let cfg = fetch.cfg;
     let mut stdout = io::stdout();
     let mut pane = Pane::new().with_origin_mode();
@@ -200,7 +196,12 @@ fn animate(
 /// Re-establish the scroll region. Bracketed with save/restore because setting
 /// a region homes the cursor, and the shell's must come back where it was.
 fn reassert_region(out: &mut impl Write, top: u16, rows: u16) -> io::Result<()> {
-    write!(out, "\x1b7{}{}\x1b8", term::scroll_region(top, rows), term::SET_ORIGIN_MODE)
+    write!(
+        out,
+        "\x1b7{}{}\x1b8",
+        term::scroll_region(top, rows),
+        term::SET_ORIGIN_MODE
+    )
 }
 
 /// The process group currently holding the terminal, or -1 if we have none.
@@ -266,7 +267,11 @@ fn claim_terminal() -> io::Result<bool> {
     let path = pid_path()?;
 
     for _ in 0..2 {
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
             Ok(mut file) => {
                 write!(file, "{}", std::process::id())?;
                 return Ok(true);
@@ -299,7 +304,11 @@ mod tests {
     /// `claim_terminal` writes through `pid_path`, which needs a tty, so these
     /// exercise the claim logic against a path we control instead.
     fn claim_at(path: &std::path::Path, pid: libc::pid_t) -> io::Result<bool> {
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
             Ok(mut file) => {
                 write!(file, "{pid}")?;
                 Ok(true)
@@ -336,7 +345,10 @@ mod tests {
 
         assert!(claim_at(&path, 111).unwrap());
         std::fs::remove_file(&path).unwrap();
-        assert!(claim_at(&path, 222).unwrap(), "release must free the terminal");
+        assert!(
+            claim_at(&path, 222).unwrap(),
+            "release must free the terminal"
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

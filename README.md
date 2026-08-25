@@ -89,8 +89,8 @@ Piping the output, or `NO_COLOR=1`, drops to the static path automatically.
 `--style` picks how the art is drawn. `half` and `quad` render it as solid
 blocks and rescale to any terminal. `ramp` maps coverage onto the characters in
 `ramp`. `raw` prints the art's own characters untouched, which suits hand-drawn
-ASCII like `earth`; pair it with `--width` near the art's own width, since it
-samples rather than averages.
+and pre-coloured ASCII like `earth`; frames may carry their own truecolor
+escapes, and `--art-color own|theme` picks between those and the theme gradient.
 
 ### In your shell startup
 

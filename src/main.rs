@@ -80,7 +80,9 @@ fn dispatch(args: Args, dir: Option<std::path::PathBuf>, mut cfg: Config) -> io:
     // saved settings are the ones you also see this time.
     if args.save {
         let Some(dir) = dir.as_deref() else {
-            return Err(io::Error::other("no config directory: set HOME or XDG_CONFIG_HOME"));
+            return Err(io::Error::other(
+                "no config directory: set HOME or XDG_CONFIG_HOME",
+            ));
         };
         let mut saved: Vec<String> = Vec::new();
         if let Some(v) = &args.animation {
@@ -96,6 +98,14 @@ fn dispatch(args: Args, dir: Option<std::path::PathBuf>, mut cfg: Config) -> io:
             };
             set_key(dir, "style", &format!("{name:?}"))?;
             saved.push(format!("style = {name:?}"));
+        }
+        if let Some(v) = args.art_color {
+            let name = match v {
+                config::ArtColor::Own => "own",
+                config::ArtColor::Theme => "theme",
+            };
+            set_key(dir, "art_color", &format!("{name:?}"))?;
+            saved.push(format!("art_color = {name:?}"));
         }
         if let Some(v) = args.fps {
             set_key(dir, "fps", &v.to_string())?;
@@ -113,7 +123,11 @@ fn dispatch(args: Args, dir: Option<std::path::PathBuf>, mut cfg: Config) -> io:
         if saved.is_empty() {
             eprintln!("animfetch: --save needs a setting to save, such as --style raw");
         } else {
-            println!("saved to {}: {}", dir.join("config.toml").display(), saved.join(", "));
+            println!(
+                "saved to {}: {}",
+                dir.join("config.toml").display(),
+                saved.join(", ")
+            );
         }
     }
 
@@ -129,7 +143,9 @@ fn dispatch(args: Args, dir: Option<std::path::PathBuf>, mut cfg: Config) -> io:
         Animation::load(anim_dir.as_deref(), name)?;
 
         let Some(dir) = dir.as_deref() else {
-            return Err(io::Error::other("no config directory: set HOME or XDG_CONFIG_HOME"));
+            return Err(io::Error::other(
+                "no config directory: set HOME or XDG_CONFIG_HOME",
+            ));
         };
         let path = set_animation(dir, name)?;
         println!("default animation set to {name:?} in {}", path.display());
@@ -140,7 +156,12 @@ fn dispatch(args: Args, dir: Option<std::path::PathBuf>, mut cfg: Config) -> io:
 
     let title = fetch::title();
     let items = fetch::collect(&cfg.modules);
-    let fetch = Fetch { animation: &animation, cfg: &cfg, title: &title, items: &items };
+    let fetch = Fetch {
+        animation: &animation,
+        cfg: &cfg,
+        title: &title,
+        items: &items,
+    };
 
     if !interactive || args.once {
         return draw_once(&fetch).map(|()| ExitCode::SUCCESS);
@@ -265,7 +286,12 @@ impl<'a> Layout<'a> {
     /// pane's row budget, not the terminal height. `wanted` caps how many frames
     /// get scaled, since a still drawing has no use for the rest.
     fn build(fetch: &Fetch<'a>, cols: u16, max_h: usize, wanted: usize) -> Self {
-        let &Fetch { animation, cfg, title, items } = fetch;
+        let &Fetch {
+            animation,
+            cfg,
+            title,
+            items,
+        } = fetch;
         let w = cols as usize;
 
         let (frames, art_w) = if w < Self::MIN_SPLIT_WIDTH {
@@ -302,22 +328,43 @@ impl<'a> Layout<'a> {
             (frames, art_w)
         };
 
-        Self { frames, art_w, title, items, width: w }
+        Self {
+            frames,
+            art_w,
+            title,
+            items,
+            width: w,
+        }
     }
 
     /// Layout for the pinned pane on a terminal of this size.
     pub fn pinned(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
-        Self::build(fetch, cols, fetch.cfg.height(Split::budget(rows)), usize::MAX)
+        Self::build(
+            fetch,
+            cols,
+            fetch.cfg.height(Split::budget(rows)),
+            usize::MAX,
+        )
     }
 
     /// Owns the whole terminal but the row the shell prompt lands on.
     pub fn full_screen(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
-        Self::build(fetch, cols, fetch.cfg.height(rows.saturating_sub(1) as usize), usize::MAX)
+        Self::build(
+            fetch,
+            cols,
+            fetch.cfg.height(rows.saturating_sub(1) as usize),
+            usize::MAX,
+        )
     }
 
     /// Like [`Self::full_screen`], but only the one frame a still will use.
     pub fn still(fetch: &Fetch<'a>, cols: u16, rows: u16) -> Self {
-        Self::build(fetch, cols, fetch.cfg.height(rows.saturating_sub(1) as usize), 1)
+        Self::build(
+            fetch,
+            cols,
+            fetch.cfg.height(rows.saturating_sub(1) as usize),
+            1,
+        )
     }
 
     /// What to draw for frame `phase`.
@@ -361,7 +408,10 @@ impl Split {
     fn new(pane_lines: usize, rows: u16) -> Option<Self> {
         let max_pane = (rows as usize).checked_sub(Self::MIN_SCROLL_ROWS + 1)?;
         let pane_h = pane_lines.min(max_pane);
-        (pane_h > 0).then(|| Self { pane_h, scroll_top: pane_h as u16 + 2 })
+        (pane_h > 0).then(|| Self {
+            pane_h,
+            scroll_top: pane_h as u16 + 2,
+        })
     }
 
     /// The split for `layout`, whose composed height is what the pane needs.
@@ -552,7 +602,12 @@ fn play(fetch: &Fetch<'_>) -> io::Result<()> {
     let mut stdout = io::stdout();
     // Reserve rows first, so redrawing in place can never scroll again and
     // save/restore-cursor stays valid throughout.
-    write!(stdout, "{}\x1b[{height}A{}", "\n".repeat(height), term::HIDE_CURSOR)?;
+    write!(
+        stdout,
+        "{}\x1b[{height}A{}",
+        "\n".repeat(height),
+        term::HIDE_CURSOR
+    )?;
 
     let result = animate_in_place(&mut stdout, &layout, cfg, height);
 
@@ -620,6 +675,7 @@ struct Args {
     animation: Option<String>,
     fps: Option<f32>,
     style: Option<config::Style>,
+    art_color: Option<config::ArtColor>,
     width: Option<usize>,
     height: Option<usize>,
     play: bool,
@@ -673,13 +729,29 @@ impl Args {
                 }
                 "--save" => args.save = true,
                 "--style" => {
-                    let raw = argv.next().ok_or("--style needs half, quad, ramp, or raw")?;
+                    let raw = argv
+                        .next()
+                        .ok_or("--style needs half, quad, ramp, or raw")?;
                     args.style = Some(match raw.as_str() {
                         "half" => config::Style::Half,
                         "quad" => config::Style::Quad,
                         "ramp" => config::Style::Ramp,
                         "raw" => config::Style::Raw,
-                        other => return Err(format!("unknown style: {other} (half, quad, ramp, or raw)")),
+                        other => {
+                            return Err(format!(
+                                "unknown style: {other} (half, quad, ramp, or raw)"
+                            ));
+                        }
+                    });
+                }
+                "--art-color" => {
+                    let raw = argv.next().ok_or("--art-color needs own or theme")?;
+                    args.art_color = Some(match raw.as_str() {
+                        "own" => config::ArtColor::Own,
+                        "theme" => config::ArtColor::Theme,
+                        other => {
+                            return Err(format!("unknown art colour: {other} (own or theme)"));
+                        }
                     });
                 }
                 "-H" | "--height" => {
@@ -706,6 +778,9 @@ impl Args {
         }
         if let Some(style) = self.style {
             cfg.style = style;
+        }
+        if let Some(art_color) = self.art_color {
+            cfg.art_color = art_color;
         }
         if let Some(width) = self.width {
             cfg.width = width;
@@ -746,6 +821,8 @@ Animations:
 Options:
   -f, --fps <N>           Frames per second
       --style <STYLE>     half (default), quad (finest detail), ramp (ASCII), raw
+      --art-color <SRC>   Where raw art's colour comes from: own (the colours
+                          in the frames, default) or theme (the gradient)
       --save              Keep the settings given this run, for every run after
   -W, --width <COLS>      Cap the art width (0 fills the screen)
   -H, --height <ROWS>     Cap the art height (0 fills the screen)
@@ -795,7 +872,10 @@ mod tests {
 
         assert!(out.contains("# keep me"), "comment lost: {out}");
         assert!(out.contains("style = \"quad\""), "not replaced: {out}");
-        assert!(out.contains("animation = \"tree\""), "other key lost: {out}");
+        assert!(
+            out.contains("animation = \"tree\""),
+            "other key lost: {out}"
+        );
         assert!(out.contains("width = 62"), "other key lost: {out}");
         assert_eq!(out.matches("style =").count(), 1, "duplicated: {out}");
 

@@ -54,7 +54,10 @@ impl Prompt {
             if is_root() { " # " } else { " $ " },
         );
 
-        Self { prefix, buffer: String::new() }
+        Self {
+            prefix,
+            buffer: String::new(),
+        }
     }
 
     /// The prompt line as it should appear this frame.
@@ -165,8 +168,7 @@ fn change_dir(arg: &str) -> Result<(), String> {
     };
 
     let previous = std::env::current_dir().ok();
-    std::env::set_current_dir(&target)
-        .map_err(|e| format!("cd: {}: {e}", target.display()))?;
+    std::env::set_current_dir(&target).map_err(|e| format!("cd: {}: {e}", target.display()))?;
 
     // SAFETY: `set_var` is only unsound with another thread reading the
     // environment. We are single-threaded, and this runs between children.
@@ -279,7 +281,10 @@ mod tests {
     }
 
     fn prompt() -> Prompt {
-        Prompt { prefix: String::new(), buffer: String::new() }
+        Prompt {
+            prefix: String::new(),
+            buffer: String::new(),
+        }
     }
 
     fn type_str(p: &mut Prompt, s: &str) {

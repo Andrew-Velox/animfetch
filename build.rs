@@ -56,8 +56,8 @@ fn main() {
 /// directory, not its path, so `-a cat-run` keeps working wherever the folder
 /// is moved to.
 fn collect(dir: &Path, out: &mut Vec<(String, Vec<String>)>) {
-    let entries = fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
+    let entries =
+        fs::read_dir(dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
 
     let mut frames: Vec<String> = Vec::new();
     let mut subdirs: Vec<std::path::PathBuf> = Vec::new();

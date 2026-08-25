@@ -15,11 +15,16 @@ pub struct Palette {
 
 impl Palette {
     pub fn parse(text: &str) -> Self {
-        Self { entries: scan(text) }
+        Self {
+            entries: scan(text),
+        }
     }
 
     pub fn get(&self, name: &str) -> Option<Rgb> {
-        self.entries.iter().find(|(k, _)| k == name).map(|&(_, c)| c)
+        self.entries
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|&(_, c)| c)
     }
 }
 
@@ -112,7 +117,11 @@ pub fn apply(cfg: &mut Config) -> Option<PathBuf> {
         cfg.value = Color(rgb);
     }
 
-    let stops: Vec<Rgb> = cfg.palette_gradient.iter().filter_map(|n| palette.get(n)).collect();
+    let stops: Vec<Rgb> = cfg
+        .palette_gradient
+        .iter()
+        .filter_map(|n| palette.get(n))
+        .collect();
     if !stops.is_empty() {
         cfg.gradient = Gradient::new(stops);
     }
@@ -162,7 +171,7 @@ mod tests {
           "primary": "#4fd8eb",
           "on_surface": "#dee2ef"
         }"##;
-    let p = Palette::parse(text);
+        let p = Palette::parse(text);
         assert_eq!(p.get("primary"), Some(Rgb(0x4f, 0xd8, 0xeb)));
         assert_eq!(p.get("on_surface"), Some(Rgb(0xde, 0xe2, 0xef)));
         assert_eq!(p.get("nope"), None);
@@ -175,7 +184,7 @@ mod tests {
           "special": { "background": "#111111" },
           "colors": { "color0": "#000000", "color1": "#ff0000" }
         }"##;
-    let p = Palette::parse(text);
+        let p = Palette::parse(text);
         assert_eq!(p.get("color1"), Some(Rgb(255, 0, 0)));
         assert_eq!(p.get("background"), Some(Rgb(0x11, 0x11, 0x11)));
         // The parent keys are not colours and must not appear as entries.
@@ -187,7 +196,7 @@ mod tests {
         // A string value that is not a colour must not shift the pairing and
         // turn the following key into a value.
         let text = r##"{ "name": "Tokyo Night", "primary": "#4fd8eb" }"##;
-    let p = Palette::parse(text);
+        let p = Palette::parse(text);
         assert_eq!(p.get("name"), None);
         assert_eq!(p.get("primary"), Some(Rgb(0x4f, 0xd8, 0xeb)));
     }
@@ -195,7 +204,7 @@ mod tests {
     #[test]
     fn strings_in_an_array_are_not_read_as_names() {
         let text = r##"{ "ramp": ["#ff0000", "#00ff00"], "primary": "#0000ff" }"##;
-    let p = Palette::parse(text);
+        let p = Palette::parse(text);
         assert_eq!(p.get("ramp"), None);
         assert_eq!(p.get("primary"), Some(Rgb(0, 0, 255)));
     }
@@ -203,14 +212,21 @@ mod tests {
     #[test]
     fn an_escaped_quote_does_not_end_the_string_early() {
         let text = r##"{ "a\"b": "#010203", "primary": "#4fd8eb" }"##;
-    let p = Palette::parse(text);
+        let p = Palette::parse(text);
         assert_eq!(p.get("a\"b"), Some(Rgb(1, 2, 3)));
         assert_eq!(p.get("primary"), Some(Rgb(0x4f, 0xd8, 0xeb)));
     }
 
     #[test]
     fn junk_yields_nothing_rather_than_panicking() {
-        for text in ["", "{", "\"", "not json at all", "{\"a\":", "{\"a\": \"#zz\"}"] {
+        for text in [
+            "",
+            "{",
+            "\"",
+            "not json at all",
+            "{\"a\":",
+            "{\"a\": \"#zz\"}",
+        ] {
             assert!(Palette::parse(text).get("a").is_none(), "{text:?}");
         }
     }
@@ -219,7 +235,11 @@ mod tests {
     fn apply_is_a_no_op_unless_the_source_is_palette() {
         let mut cfg = Config::default();
         let before = cfg.accent.0;
-        assert_eq!(cfg.color_source, ColorSource::Config, "default must not change behaviour");
+        assert_eq!(
+            cfg.color_source,
+            ColorSource::Config,
+            "default must not change behaviour"
+        );
         assert!(apply(&mut cfg).is_none());
         assert_eq!(cfg.accent.0, before);
     }
@@ -239,7 +259,7 @@ mod tests {
     #[test]
     fn roles_the_file_omits_keep_their_configured_colour() {
         let text = r##"{ "primary": "#4fd8eb" }"##;
-    let p = Palette::parse(text);
+        let p = Palette::parse(text);
         // `apply` only assigns when the lookup succeeds; this mirrors that.
         assert!(p.get("primary").is_some());
         assert!(p.get("on_surface").is_none());
@@ -256,7 +276,8 @@ mod tests {
 
     #[test]
     fn a_rewritten_palette_is_noticed_once() {
-        let path = std::env::temp_dir().join(format!("animfetch-watch-{}.json", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("animfetch-watch-{}.json", std::process::id()));
         std::fs::write(&path, r##"{"primary": "#4fd8eb"}"##).unwrap();
 
         let mut watch = Watch::new(&watching(&path));
@@ -264,7 +285,8 @@ mod tests {
 
         // Set mtime explicitly; sleeping is flaky on coarse filesystems.
         let file = std::fs::File::options().write(true).open(&path).unwrap();
-        file.set_modified(SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
+        file.set_modified(SystemTime::now() + std::time::Duration::from_secs(5))
+            .unwrap();
 
         assert!(watch.changed(), "a rewrite must be noticed");
         assert!(!watch.changed(), "and only once, not every poll after");
@@ -274,10 +296,14 @@ mod tests {
 
     #[test]
     fn nothing_is_watched_when_the_source_is_the_config() {
-        let path = std::env::temp_dir().join(format!("animfetch-nowatch-{}.json", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("animfetch-nowatch-{}.json", std::process::id()));
         std::fs::write(&path, r##"{"primary": "#4fd8eb"}"##).unwrap();
 
-        let cfg = Config { color_source: ColorSource::Config, ..watching(&path) };
+        let cfg = Config {
+            color_source: ColorSource::Config,
+            ..watching(&path)
+        };
         assert!(!Watch::new(&cfg).changed());
 
         std::fs::remove_file(&path).ok();
@@ -285,8 +311,13 @@ mod tests {
 
     #[test]
     fn reload_picks_up_the_new_colours() {
-        let path = std::env::temp_dir().join(format!("animfetch-reload-{}.json", std::process::id()));
-        std::fs::write(&path, r##"{"primary": "#ff0000", "on_surface": "#00ff00"}"##).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("animfetch-reload-{}.json", std::process::id()));
+        std::fs::write(
+            &path,
+            r##"{"primary": "#ff0000", "on_surface": "#00ff00"}"##,
+        )
+        .unwrap();
 
         let mut cfg = watching(&path);
         assert!(apply(&mut cfg).is_some());
@@ -294,7 +325,11 @@ mod tests {
         assert_eq!(cfg.value.0, Rgb(0, 255, 0));
 
         // What a retheme looks like from here: same path, new contents.
-        std::fs::write(&path, r##"{"primary": "#0000ff", "on_surface": "#ffffff"}"##).unwrap();
+        std::fs::write(
+            &path,
+            r##"{"primary": "#0000ff", "on_surface": "#ffffff"}"##,
+        )
+        .unwrap();
         assert!(apply(&mut cfg).is_some());
         assert_eq!(cfg.accent.0, Rgb(0, 0, 255));
         assert_eq!(cfg.value.0, Rgb(255, 255, 255));
