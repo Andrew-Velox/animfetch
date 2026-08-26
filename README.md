@@ -42,6 +42,37 @@ Arch Linux:
 ```sh
 paru -S animfetch-bin      # or animfetch-git to build from source
 ```
+Nix / NixOS:
+
+Run without installing:
+
+```sh
+nix run github:Andrew-Velox/animfetch
+```
+
+Or add animfetch to your own `flake.nix`:
+
+```nix
+{
+  inputs.animfetch.url = "github:Andrew-Velox/animfetch";
+}
+```
+
+Then add it to your NixOS packages:
+
+```nix
+environment.systemPackages = [
+  inputs.animfetch.packages.${pkgs.stdenv.hostPlatform.system}.default
+];
+```
+
+or with Home Manager:
+
+```nix
+home.packages = [
+  inputs.animfetch.packages.${pkgs.stdenv.hostPlatform.system}.default
+];
+```
 
 Any Linux or macOS, prebuilt binary, no Rust needed:
 
