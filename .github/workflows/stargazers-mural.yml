@@ -12,7 +12,7 @@ permissions:
 
 # A scheduled run and a manual one at the same time would race on the commit.
 concurrency:
-  group: stargazers-mural
+  group: stargazers-mural-v2
   cancel-in-progress: true
 
 jobs:
