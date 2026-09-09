@@ -1,7 +1,5 @@
 name: Generate Stargazers Mural
 
-# Config lives in .github/contributor-mural.yml, which is where the action
-# looks by default.
 on:
   schedule:
     - cron: "0 0 * * *"
