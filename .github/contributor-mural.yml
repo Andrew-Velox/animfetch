@@ -6,7 +6,7 @@
 # No `group:`, which would draw a "Stargazers" title inside the SVG on top of
 # the README's own heading.
 stargazers:
-  max: 100
+  max: 200
 
 style: honeycomb
 
