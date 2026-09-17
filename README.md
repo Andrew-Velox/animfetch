@@ -21,6 +21,8 @@ macOS.
 
 ## Animations
 
+
+### Non-colored
 |   |   |   |   |   |
 |:---:|:---:|:---:|:---:|:---:|
 |cat-run|cat-tail|fox-run|dolphin-swim|blackhole|
@@ -32,6 +34,22 @@ macOS.
 |squirrel-run|earth|saturn|||
 | ![](.github/assets/squirrel-run.gif) | ![](.github/assets/earth.gif) | ![](.github/assets/saturn.gif) | ![](.github/assets/rocket.gif) | ![](.github/assets/fire.gif) |
 | ![](.github/assets/morty-dance.gif) | ![](.github/assets/bird.gif) |
+
+### Coloured
+<details>
+<summary>Click to expand</summary>
+
+|   |   |   |   |   |
+|:---:|:---:|:---:|:---:|:---:|
+|dragon|mew|fire|rocket|rabbit-sit|
+| ![](.github/assets/coloured/dragon.gif) | ![](.github/assets/coloured/mew.gif) | ![](.github/assets/coloured/fire.gif) | ![](.github/assets/coloured/rocket.gif) | ![](.github/assets/coloured/rabbit-sit.gif) |
+|gojo-dance|gojo-dance2|morty-dance|mew|conjito|
+| ![](.github/assets/coloured/gojo-dance.gif) | ![](.github/assets/coloured/gojo-dance2.gif) | ![](.github/assets/coloured/morty-dance.gif) | ![](.github/assets/coloured/mew.gif) | ![](.github/assets/coloured/conjito.gif) |
+|boxing|coelho|
+| ![](.github/assets/coloured/boxing.gif) | ![](.github/assets/coloured/coelho.gif) |
+
+</details>
+
 
 Pick one with `-a <name>`, or set the default with `--set <name>`.
 
