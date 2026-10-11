@@ -110,6 +110,111 @@ palette_gradient = ["primary", "secondary", "tertiary"]
 # Under --pin the palette file is re-read when it changes, so retheming your
 # desktop recolours the running animation without restarting it.
 
+# How the info pane looks.
+#
+#   "classic"  user@host, a rule, then `Label: value` rows (default)
+#   "boxed"    short lowercase labels with icons in a rounded box, values
+#              beside it, usage percentages coloured by how full they are:
+#
+#                ╭──────────╮
+#                │  distro  │  Arch Linux x86_64
+#                │  memory  │  4.39 GiB / 15.56 GiB (28%)
+#                ╰──────────╯
+#
+#   "tree"     a user box over two groups, OS and PC, each a tree of icons
+#              beside a column of `: value` lines:
+#
+#                ┏━━━━━━━┓ ┏━━━━━━━━━━━━━━━━┓
+#                ┃   ┃ ┃ : harsh@fedora ┃
+#                ┗━━━━━━━┛ ┗━━━━━━━━━━━━━━━━┛
+#                ┏━━━━━━━┓ ┏━━━━━━━━━━━━━━━━┓
+#                ┃  OS  ┃ ┃ : Fedora Linux ┃
+#                ┃ │ ├─ ┃ ┃ : zsh 5.9      ┃
+#                ┃ └ └─ ┃ ┃ : kitty 0.44.0 ┃
+#                ┗━━━━━━━┛ ┗━━━━━━━━━━━━━━━━┛
+#
+#              It draws a fixed set of rows: os, shell and terminal under OS;
+#              host (or cpu, if the firmware gives no host name), gpu, memory
+#              and display under PC. Other modules are not shown in it.
+#
+#   "sections" titled blocks separated by rules, with the colours as dots:
+#
+#                ┌──────── Hardware ────────┐
+#                 PC: 20L5S1R500 (ThinkPad T480)
+#                 ├─  Intel(R) Core(TM) i7-8650U
+#                 └─  /home: 12.12 GiB / 294.23 GiB
+#                ├──────── Software ────────┤
+#                 OS: Artix Linux x86_64
+#                ├─────── Uptime / Age ──────┤
+#                OS Age  : 337 days
+#                Battery : 100% [AC Connected]
+#
+#              Three fixed blocks: Hardware (host, cpu, gpu, memory, and every
+#              local disk), Software (os, kernel, packages, shell, wm) and
+#              Uptime / Age (os_age, uptime, and each battery).
+#
+#   "chips"    filled, rounded pills: a heading chip per section, a two-letter
+#              key chip and a value chip per row, the colours as dots:
+#
+#                ( SYSTEM )
+#                ( OS ) ( Arch Linux )
+#                ( KE ) ( 6.18.7-arch1-1 )
+#
+#              Section headings are filled with `accent`; chips are the
+#              `value` colour darkened, so it follows the palette. Rounded ends
+#              need both `icons` and colour, and are square without either.
+#              Three fixed blocks: SYSTEM (os, kernel, uptime, packages),
+#              SOFTWARE (wm, shell, terminal, font) and HARDWARE (cpu, gpu,
+#              memory, disk). Values are short: no versions, no percentages.
+#
+#   "iconic"  a bare coloured icon per row and no labels, under pill headings,
+#              with a row of outline shapes below:
+#
+#                 mehedi
+#                 3days 18hours 45mins 1sec
+#
+#                ( Hardware )
+#
+#                 1366x768
+#                 2150MiB used (36%)
+#                 60.00°C
+#
+#              Icons are coloured along `gradient`, one after another, and
+#              the headings are filled from it, so it follows a palette. The
+#              user's name stands alone (no host). Two fixed blocks: Hardware
+#              (display, gpu, memory, swap, cpu, temperature) and Software
+#              (kernel, wm, shell_path, packages). With `icons = false` each
+#              row carries a short name instead, since the icon was the label.
+#
+#   "card"    one rounded box with each label at the left edge and its value
+#              at the right, then a line of your own text (`footer`):
+#
+#                ╭──────────────────────────────╮
+#                │                              │
+#                │   OS              CachyOS    │
+#                │   Ram    4.23 / 31.25 GiB    │
+#                │   Root   46 / 928 GiB - btrfs│
+#                │                              │
+#                │        we are free!          │
+#                ╰──────────────────────────────╯
+#
+#              Rows go in the order of `modules`, so it is a list you shape.
+#              Memory is `Ram`, and each disk is named for where it is mounted
+#              (`/` is `Root`, `/mnt/Jogos` is `Jogos`). Values are short and
+#              bare, in a single colour: your `value`.
+#
+# `boxed`, `tree` and `sections` also read fuller values: the kernel's name,
+# and the terminal's, shell's and window manager's versions. Versions of the
+# shell and window manager come from running them, which costs a few
+# milliseconds that `classic` never spends. `chips`, `iconic` and `card` read
+# nothing extra. Try one with --info boxed, tree, sections, chips, iconic or
+# card.
+info_style = "classic"
+
+# Draw an icon beside each label in styles that have them. They are Nerd Font
+# glyphs: set this to false if you see empty boxes instead.
+icons = true
+
 # Blank columns between the art and the info pane.
 gap = 4
 
@@ -117,21 +222,54 @@ gap = 4
 # terminal or NO_COLOR is set.
 color = true
 
-# Rows in the info pane, in order. Remove any you do not want.
-# Available: os, host, kernel, uptime, packages, shell, wm, terminal,
-#            cpu, memory, swap, disk, colors
-modules = [
-  "os",
-  "host",
-  "kernel",
-  "uptime",
-  "packages",
-  "shell",
-  "wm",
-  "terminal",
-  "cpu",
-  "memory",
-  "swap",
-  "disk",
-  "colors",
-]
+# Rows in the info pane, in order. Leave this out to get the rows that suit
+# `info_style`; set it and your list wins, whichever style is chosen.
+# Available: os, host, kernel, uptime, packages, shell, shell_path, wm,
+#            terminal, font, cpu, temperature, gpu, memory, swap, disk, disks,
+#            display, battery, os_age, custom, colors
+#
+# `disk` is the root filesystem. `disks` is every local one, a row each, and
+# `battery` a row per battery; a machine without one shows none. `shell_path`
+# is the full path of $SHELL where `shell` is its name, and `temperature` the
+# CPU's, from the hwmon chip that reports it (`k10temp`, `coretemp`, ...); a
+# machine whose sensors are not among those has none. `font` is
+# the desktop's UI font, read from GTK's settings.ini, so a machine that keeps
+# it only in dconf shows no font row.
+#
+# classic default:
+#   modules = ["os", "host", "kernel", "uptime", "packages", "shell", "wm",
+#              "terminal", "cpu", "memory", "swap", "disk", "colors"]
+# boxed default:
+#   modules = ["os", "kernel", "wm", "terminal", "shell", "cpu", "gpu", "disk",
+#              "memory", "uptime", "os_age"]
+# tree default:
+#   modules = ["os", "shell", "terminal", "host", "cpu", "gpu", "memory",
+#              "display"]
+# sections default:
+#   modules = ["host", "cpu", "gpu", "memory", "disks", "os", "kernel",
+#              "packages", "shell", "wm", "os_age", "uptime", "battery",
+#              "colors"]
+# card default:
+#   modules = ["os", "kernel", "uptime", "shell", "wm", "os_age", "memory",
+#              "cpu", "disks", "packages", "custom"]
+# iconic default:
+#   modules = ["uptime", "display", "gpu", "memory", "swap", "cpu",
+#              "temperature", "kernel", "wm", "shell_path", "packages",
+#              "colors"]
+# chips default:
+#   modules = ["os", "kernel", "uptime", "packages", "wm", "shell",
+#              "terminal", "font", "cpu", "gpu", "memory", "disk", "colors"]
+
+# Rows of your own text. They are placed wherever `custom` stands in `modules`,
+# so `modules = ["os", "custom", "kernel"]` puts them between the two. Only the
+# styles that list rows freely show them: classic, boxed and card. A row with
+# an empty label is skipped.
+#
+# custom = [
+#   { label = "Owner", value = "POKKITA" },
+# ]
+
+# A line of your own text, shown under the rows by the styles that have room
+# for one (currently `card`). Wide characters are measured by what they occupy.
+#
+# footer = "we are free!"

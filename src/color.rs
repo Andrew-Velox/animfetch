@@ -10,14 +10,43 @@ impl Rgb {
     /// SGR foreground sequence, e.g. `\x1b[38;2;255;0;0m`. Built by hand because
     /// a frame emits dozens and `write!` was the biggest cost of composing one.
     pub fn fg(self, out: &mut String) {
+        self.sgr(out, "\x1b[38;2;");
+    }
+
+    /// SGR background sequence, e.g. `\x1b[48;2;255;0;0m`.
+    pub fn bg(self, out: &mut String) {
+        self.sgr(out, "\x1b[48;2;");
+    }
+
+    fn sgr(self, out: &mut String, prefix: &str) {
         let Rgb(r, g, b) = self;
-        out.push_str("\x1b[38;2;");
+        out.push_str(prefix);
         push_dec(out, r);
         out.push(';');
         push_dec(out, g);
         out.push(';');
         push_dec(out, b);
         out.push('m');
+    }
+
+    /// This colour at `factor` of its brightness: 0.0 is black, 1.0 itself.
+    pub fn scale(self, factor: f32) -> Self {
+        Rgb(0, 0, 0).lerp(self, factor)
+    }
+
+    /// Perceived brightness, 0.0 (black) to 1.0 (white).
+    pub fn luma(self) -> f32 {
+        let Rgb(r, g, b) = self;
+        (0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b)) / 255.0
+    }
+
+    /// Near-black or near-white, whichever can be read on this colour.
+    pub fn contrast(self) -> Self {
+        if self.luma() > 0.5 {
+            Rgb(0x14, 0x14, 0x14)
+        } else {
+            Rgb(0xf5, 0xf5, 0xf5)
+        }
     }
 
     fn lerp(self, other: Self, t: f32) -> Self {

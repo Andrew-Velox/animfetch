@@ -2,18 +2,27 @@
 //! Never subprocesses, which is why this runs in about a millisecond.
 //!
 //! Everything that knows where a number comes from lives here. Adding a
-//! platform means writing a sibling of this file with the same `collect` and
+//! platform means writing a sibling of this module with the same `collect` and
 //! `hostname`; nothing above cares.
+//!
+//! The rows that need more than a file read have a module each: [`storage`]
+//! (disks), [`power`] (batteries), [`display`] (screens), [`gpu`].
+
+mod display;
+mod font;
+mod gpu;
+mod power;
+mod storage;
+mod temperature;
 
 use std::fs;
 use std::path::Path;
 
-use super::{
-    Item, arch, basename_of_env, env, format_usage, humanize_duration, is_shell, swatches,
-};
+use super::common::{arch, basename_of_env, env, is_shell, os_age, swatches};
+use super::format::{humanize_age, humanize_duration};
+use super::{Detail, Item, Usage};
 use crate::config::Module;
 
-/// Collect the requested modules, skipping ones this machine can't answer.
 pub fn collect(modules: &[Module]) -> Vec<Item> {
     let mut items = Vec::with_capacity(modules.len());
 
@@ -25,25 +34,44 @@ pub fn collect(modules: &[Module]) -> Vec<Item> {
         .flatten();
 
     for &module in modules {
-        let (label, value) = match module {
-            Module::Os => ("OS", os()),
-            Module::Host => ("Host", host()),
-            Module::Kernel => ("Kernel", read_trimmed("/proc/sys/kernel/osrelease")),
-            Module::Uptime => ("Uptime", uptime()),
-            Module::Packages => ("Packages", packages()),
-            Module::Shell => ("Shell", basename_of_env("SHELL")),
-            Module::Wm => ("WM", wm()),
-            Module::Terminal => ("Terminal", terminal()),
-            Module::Cpu => ("CPU", cpu()),
-            Module::Memory => ("Memory", meminfo.as_deref().and_then(memory)),
-            Module::Swap => ("Swap", meminfo.as_deref().and_then(swap)),
-            Module::Disk => ("Disk", disk("/")),
-            Module::Colors => ("", Some(swatches())),
-        };
-
-        if let Some(value) = value {
-            items.push(Item { label, value });
+        // Modules that are several rows, not one.
+        match module {
+            Module::Disks => {
+                items.extend(storage::disks());
+                continue;
+            }
+            Module::Battery => {
+                items.extend(power::batteries(Path::new("/sys/class/power_supply")));
+                continue;
+            }
+            _ => {}
         }
+
+        let item = match module {
+            Module::Disks | Module::Battery => None, // handled above
+            // Not a system fact: the caller puts the configured rows here.
+            Module::Custom => None,
+            Module::Os => Item::read("OS", os()),
+            Module::Host => host(),
+            Module::Kernel => Item::read("Kernel", read_trimmed("/proc/sys/kernel/osrelease")),
+            Module::Uptime => uptime().map(|s| Item::duration("Uptime", s, humanize_duration(s))),
+            Module::Packages => Item::read("Packages", packages()),
+            Module::Shell => Item::read("Shell", basename_of_env("SHELL")),
+            Module::Wm => Item::read("WM", wm()),
+            Module::Terminal => Item::read("Terminal", terminal()),
+            Module::Cpu => Item::read("CPU", cpu()),
+            Module::Gpu => Item::read("GPU", gpu::read()),
+            Module::Memory => Item::usage("Memory", meminfo.as_deref().and_then(memory)),
+            Module::Swap => Item::usage("Swap", meminfo.as_deref().and_then(swap)),
+            Module::Disk => Item::usage("Disk", storage::disk("/")),
+            Module::Display => Item::read("Display", display::read()),
+            Module::Font => Item::read("Font", font::read()),
+            Module::OsAge => os_age().map(|s| Item::duration("OS Age", s, humanize_age(s))),
+            Module::Temperature => Item::read("Temperature", temperature::read()),
+            Module::ShellPath => Item::read("Shell Path", env("SHELL")),
+            Module::Colors => Item::read("", Some(swatches())),
+        };
+        items.extend(item);
     }
 
     items
@@ -61,22 +89,33 @@ fn os() -> Option<String> {
     }
 }
 
-fn host() -> Option<String> {
+fn host() -> Option<Item> {
     let dmi = Path::new("/sys/devices/virtual/dmi/id");
     let name = read_trimmed(dmi.join("product_name"))?;
 
     // Laptops put the useful string here; desktops leave filler.
-    match read_trimmed(dmi.join("product_version")).filter(|v| is_meaningful(v)) {
-        Some(version) => Some(format!("{name} {version}")),
-        None => Some(name),
+    let version = read_trimmed(dmi.join("product_version")).filter(|v| is_meaningful(v));
+    let joined = match &version {
+        Some(version) => format!("{name} {version}"),
+        None => name.clone(),
+    };
+    if !is_meaningful(&joined) {
+        return None;
     }
-    .filter(|v| is_meaningful(v))
+
+    let mut item = Item::new("Host", joined);
+    // A Lenovo's name is a model code and its version is what it is called:
+    // `20L5S1R500 (ThinkPad T480)` says both, and reads as one thing.
+    if let Some(version) = version {
+        item.detail = Some(Detail::Text(format!("{name} ({version})")));
+    }
+    Some(item)
 }
 
-fn uptime() -> Option<String> {
+fn uptime() -> Option<u64> {
     let raw = fs::read_to_string("/proc/uptime").ok()?;
     let secs: f64 = raw.split_whitespace().next()?.parse().ok()?;
-    Some(humanize_duration(secs as u64))
+    Some(secs as u64)
 }
 
 fn packages() -> Option<String> {
@@ -184,42 +223,21 @@ fn model_name(text: &str) -> Option<String> {
         .map(|(_, v)| v.trim().to_string())
 }
 
-fn memory(info: &str) -> Option<String> {
+fn memory(info: &str) -> Option<Usage> {
     let total = meminfo_field(info, "MemTotal")?;
 
     // MemAvailable counts reclaimable cache; MemFree overstates usage.
     let available = meminfo_field(info, "MemAvailable")?;
-    Some(format_usage(total - available, total))
+    Some(Usage::new(total.checked_sub(available)?, total))
 }
 
-fn swap(info: &str) -> Option<String> {
+fn swap(info: &str) -> Option<Usage> {
     let total = meminfo_field(info, "SwapTotal")?;
     if total == 0 {
         return None; // No swap configured; a row reading "0B / 0B" is noise.
     }
     let free = meminfo_field(info, "SwapFree")?;
-    Some(format_usage(total - free, total))
-}
-
-fn disk(mount: &str) -> Option<String> {
-    let path = std::ffi::CString::new(mount).ok()?;
-    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-
-    // SAFETY: valid C string, correctly sized writable statvfs.
-    if unsafe { libc::statvfs(path.as_ptr(), &mut stat) } != 0 {
-        return None;
-    }
-
-    // Block counts are in units of f_frsize.
-    let unit = stat.f_frsize as u64;
-    let total = stat.f_blocks as u64 * unit;
-    // f_bavail excludes root-reserved blocks.
-    let free = stat.f_bavail as u64 * unit;
-    if total == 0 {
-        return None;
-    }
-
-    Some(format_usage((total - free) / 1024, total / 1024))
+    Some(Usage::new(total.checked_sub(free)?, total))
 }
 
 /// Read a `KEY=value` field from os-release, stripping optional quoting.
@@ -314,6 +332,7 @@ fn read_trimmed(path: impl AsRef<Path>) -> Option<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

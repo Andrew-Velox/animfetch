@@ -9,8 +9,9 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::layout::{Fetch, Layout, Split};
 use crate::render::Pane;
-use crate::{Fetch, Layout, Split, palette, render, term};
+use crate::{palette, render, term};
 
 /// How often to re-check the terminal size while pinned.
 const RESIZE_POLL: Duration = Duration::from_millis(500);

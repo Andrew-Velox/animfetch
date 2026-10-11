@@ -4,7 +4,9 @@
 
 use std::fs;
 
-use super::{Item, arch, basename_of_env, env, format_usage, humanize_duration, swatches};
+use super::common::{arch, basename_of_env, env, os_age, swatches};
+use super::format::{humanize_age, humanize_duration};
+use super::{Item, Usage};
 use crate::config::Module;
 
 /// Collect the requested modules, skipping ones this machine can't answer.
@@ -12,27 +14,53 @@ pub fn collect(modules: &[Module]) -> Vec<Item> {
     let mut items = Vec::with_capacity(modules.len());
 
     for &module in modules {
-        let (label, value) = match module {
-            Module::Os => ("OS", os()),
-            Module::Host => ("Host", sysctl_string("hw.model")),
-            Module::Kernel => ("Kernel", sysctl_string("kern.osrelease")),
-            Module::Uptime => ("Uptime", uptime()),
-            Module::Packages => ("Packages", packages()),
-            Module::Shell => ("Shell", basename_of_env("SHELL")),
+        // Modules that are several rows, not one. macOS has the root volume
+        // and no battery reader yet, so each is at most one row or none.
+        match module {
+            Module::Disks => {
+                items.extend(Item::usage(
+                    "Disk",
+                    disk("/").map(|u| u.with_name(Some("/".into()))),
+                ));
+                continue;
+            }
+            // Needs IOKit, which this backend does not link.
+            Module::Battery => continue,
+            _ => {}
+        }
+
+        let item = match module {
+            Module::Disks | Module::Battery => None, // handled above
+            // Not a system fact: the caller puts the configured rows here.
+            Module::Custom => None,
+            Module::Os => Item::read("OS", os()),
+            Module::Host => Item::read("Host", sysctl_string("hw.model")),
+            Module::Kernel => Item::read("Kernel", sysctl_string("kern.osrelease")),
+            Module::Uptime => uptime().map(|s| Item::duration("Uptime", s, humanize_duration(s))),
+            Module::Packages => Item::read("Packages", packages()),
+            Module::Shell => Item::read("Shell", basename_of_env("SHELL")),
             // The compositor is not configurable on macOS, so this is a
             // constant rather than a lookup.
-            Module::Wm => ("WM", Some("Quartz Compositor".into())),
-            Module::Terminal => ("Terminal", env("TERM_PROGRAM").or_else(|| env("TERM"))),
-            Module::Cpu => ("CPU", cpu()),
-            Module::Memory => ("Memory", memory()),
-            Module::Swap => ("Swap", swap()),
-            Module::Disk => ("Disk", disk("/")),
-            Module::Colors => ("", Some(swatches())),
+            Module::Wm => Item::read("WM", Some("Quartz Compositor".into())),
+            Module::Terminal => Item::read("Terminal", env("TERM_PROGRAM").or_else(|| env("TERM"))),
+            Module::Cpu => Item::read("CPU", cpu()),
+            // Not read here yet: it needs IOKit, and a row this machine cannot
+            // answer is skipped rather than guessed.
+            Module::Gpu => None,
+            Module::Memory => Item::usage("Memory", memory()),
+            Module::Swap => Item::usage("Swap", swap()),
+            Module::Disk => Item::usage("Disk", disk("/")),
+            // Needs CoreGraphics, which this backend does not link.
+            Module::Display => None,
+            // macOS keeps its UI font in a preferences database, not a file.
+            Module::Font => None,
+            Module::OsAge => os_age().map(|s| Item::duration("OS Age", s, humanize_age(s))),
+            // Temperature lives behind SMC, which this backend does not read.
+            Module::Temperature => None,
+            Module::ShellPath => Item::read("Shell Path", env("SHELL")),
+            Module::Colors => Item::read("", Some(swatches())),
         };
-
-        if let Some(value) = value {
-            items.push(Item { label, value });
-        }
+        items.extend(item);
     }
 
     items
@@ -69,12 +97,12 @@ fn os() -> Option<String> {
     }
 }
 
-fn uptime() -> Option<String> {
+fn uptime() -> Option<u64> {
     let boot: libc::timeval = sysctl_struct("kern.boottime")?;
     // SAFETY: time with a null pointer only returns the clock.
     let now = unsafe { libc::time(std::ptr::null_mut()) };
     let secs = now.checked_sub(boot.tv_sec)?;
-    (secs >= 0).then(|| humanize_duration(secs as u64))
+    (secs >= 0).then_some(secs as u64)
 }
 
 fn packages() -> Option<String> {
@@ -100,7 +128,7 @@ fn cpu() -> Option<String> {
     Some(format!("{model} ({cores})"))
 }
 
-fn memory() -> Option<String> {
+fn memory() -> Option<Usage> {
     let total: u64 = sysctl_struct("hw.memsize")?;
     let page: u64 = sysctl_struct::<i64>("hw.pagesize")? as u64;
 
@@ -110,15 +138,15 @@ fn memory() -> Option<String> {
     let used = (vm.active_count as u64 + vm.wire_count as u64 + vm.compressor_page_count as u64)
         .checked_mul(page)?;
 
-    Some(format_usage(used / 1024, total / 1024))
+    Some(Usage::new(used / 1024, total / 1024))
 }
 
-fn swap() -> Option<String> {
+fn swap() -> Option<Usage> {
     let usage: XswUsage = sysctl_struct("vm.swapusage")?;
-    Some(format_usage(usage.xsu_used / 1024, usage.xsu_total / 1024))
+    Some(Usage::new(usage.xsu_used / 1024, usage.xsu_total / 1024))
 }
 
-fn disk(mount: &str) -> Option<String> {
+fn disk(mount: &str) -> Option<Usage> {
     let path = std::ffi::CString::new(mount).ok()?;
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
 
@@ -131,7 +159,24 @@ fn disk(mount: &str) -> Option<String> {
     let total = stat.f_blocks as u64 * frsize;
     let avail = stat.f_bavail as u64 * frsize;
     let used = total.checked_sub(avail)?;
-    (total > 0).then(|| format_usage(used / 1024, total / 1024))
+    (total > 0).then(|| Usage::new(used / 1024, total / 1024).with_note(fs_type(mount)))
+}
+
+/// `apfs`, `hfs`: the filesystem mounted at `mount`.
+fn fs_type(mount: &str) -> Option<String> {
+    let path = std::ffi::CString::new(mount).ok()?;
+    // SAFETY: valid C string, correctly sized writable statfs.
+    let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(path.as_ptr(), &mut stat) } != 0 {
+        return None;
+    }
+    let bytes: Vec<u8> = stat
+        .f_fstypename
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u8)
+        .collect();
+    String::from_utf8(bytes).ok().filter(|s| !s.is_empty())
 }
 
 // ---------------------------------------------------------------------------

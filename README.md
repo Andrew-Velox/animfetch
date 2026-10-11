@@ -181,6 +181,62 @@ falls back to defaults.
 
 [example]: https://github.com/Andrew-Velox/animfetch/blob/main/config.example.toml
 
+### Info styles
+
+Seven layouts for the info pane, picked with `info_style` or `--info`:
+
+| Style | Looks like |
+| --- | --- |
+| `classic` (default) | `user@host`, a rule, then `Label: value` rows |
+| `boxed` | icons and short labels in a rounded box, values beside it |
+| `tree` | a user box over OS and PC groups: a tree of icons beside `: value` lines |
+| `sections` | Hardware, Software and Uptime / Age blocks under titled rules, then the colours as dots |
+| `chips` | SYSTEM, SOFTWARE and HARDWARE as filled, rounded pills with two-letter keys |
+| `iconic` | a bare coloured icon per row, no labels, under pill headings, then outline shapes |
+| `card` | one rounded box, labels at the left edge and values at the right, then your own line of text |
+
+`boxed` also shows fuller values (kernel name, terminal, shell and window
+manager versions, the filesystem under `disk`), colours usage percentages by how
+full they are, and adds the `gpu` and `os_age` rows. `tree` draws a fixed set of
+rows (os, shell, terminal, host, gpu, memory, display) and leaves other modules
+out. `sections` draws its own fixed three blocks, with the CPU and GPU as bare
+model names, every local disk on its own line (`disks`), and a line per battery
+(`battery`, none on a desktop). Its section keys take the far end of the
+gradient as their colour, so they follow a palette too.
+
+`chips` and `iconic` read nothing extra: their values are short and bare
+(`Arch Linux`, `1h 40m`, `AMD Ryzen 5 5600X`), so they cost no more than
+`classic`. `iconic` colours its icons along your `gradient` and fills its
+headings from it, shows only the user's name (no host), and says uptime to the
+second. Its `temperature` row needs a hwmon chip that reports the CPU
+(`k10temp`, `coretemp`); without one the row is skipped.
+
+`card` lists rows in the order of `modules`, so it is the style you shape
+yourself. Memory is `Ram` and each disk is named for where it is mounted. Two
+config keys feed it: `custom` (rows of your own text, placed where `custom`
+stands in `modules`) and `footer` (a line under the rows). Both are plain
+config, so they cost nothing:
+
+```toml
+info_style = "card"
+footer = "we are free!"
+custom = [{ label = "Owner", value = "POKKITA" }]
+```
+
+`chips` fills its pills with your `value` colour darkened and its headings with
+your `accent`, so it follows a palette like everything else. The rounded ends
+are Powerline glyphs and need both `icons` and colour; without either the
+chips are square. Its `font` row comes from GTK's `settings.ini`, so a machine
+with no GTK settings file shows none.
+
+The `display` row reads each screen's current mode from the kernel, so it needs
+access to `/dev/dri`, which a plain SSH session lacks; the row is skipped there.
+
+Icons are Nerd Font glyphs; set `icons = false` if you see empty boxes. The
+versions of the shell and window manager come from running them, about 7 ms on a
+typical machine, which `classic` never spends. Leave `modules` unset to get each
+style's own rows.
+
 Set `live = true` (or pass `--live`) and the uptime, memory, swap and disk
 rows keep updating while the fetch is pinned, every `live_interval` seconds
 (default 2). It is off by default, only touches those four rows, and pauses
