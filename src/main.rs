@@ -98,6 +98,11 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
     // Persist the overrides this run carried. Done after `apply`, so anything
     // the parser rejected never reaches the file, and before the modes so the
     // saved settings are the ones you also see this time.
+    //
+    // What it says is held back under `--pin`, whose setup clears the screen
+    // and would take the line with it; it is said below the pane instead.
+    let mut said = None;
+    let mut saved_nothing = false;
     if args.save {
         let dir = require_dir(dir.as_deref())?;
         let saved = args.saved();
@@ -106,14 +111,20 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
         }
 
         if saved.is_empty() {
+            saved_nothing = true;
             eprintln!("animfetch: --save needs a setting to save, such as --style raw");
         } else {
             let shown: Vec<String> = saved.iter().map(|(k, v)| format!("{k} = {v}")).collect();
-            println!(
+            let line = format!(
                 "saved to {}: {}",
                 dir.join("config.toml").display(),
                 shown.join(", ")
             );
+            if args.pin {
+                said = Some(line);
+            } else {
+                println!("{line}");
+            }
         }
     }
 
@@ -152,6 +163,17 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
     let borders = border::Borders::load(&cfg, dir.as_deref(), interactive, to_terminal)
         .map_err(io::Error::other)?;
 
+    // Said, not run: a session started here would clear the screen over it.
+    // Past the animation and border checks above, so a name that is wrong is
+    // still reported, as it always was.
+    if args.saves_only() {
+        return Ok(if saved_nothing {
+            ExitCode::from(2)
+        } else {
+            ExitCode::SUCCESS
+        });
+    }
+
     let title = fetch::title();
     let items = fetch::gather(&cfg);
     let fetch = Fetch {
@@ -163,6 +185,9 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
     };
 
     if !interactive || args.once {
+        if let Some(line) = said.take() {
+            println!("{line}");
+        }
         return modes::draw_once(&fetch).map(|()| ExitCode::SUCCESS);
     }
 
@@ -174,7 +199,19 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
     }
 
     if args.pin {
-        return pin::start(&fetch, args.existing_pin()).map(|()| ExitCode::SUCCESS);
+        let existing = args.existing_pin();
+        let started = pin::start(&fetch, existing)?;
+
+        // Only the process the shell ran; the one drawing has nothing to add.
+        if started != pin::Started::Finished {
+            if let Some(line) = said.take() {
+                println!("{line}");
+            }
+            if started == pin::Started::Kept && existing == pin::Existing::KeepAndSay {
+                println!("{}", pin::KEPT_NOTE);
+            }
+        }
+        return Ok(ExitCode::SUCCESS);
     }
 
     if args.play {

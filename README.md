@@ -57,7 +57,8 @@ To have it in every new terminal, put this in `~/.bashrc` or `~/.zshrc`:
 [[ $- == *i* ]] && command -v animfetch >/dev/null && animfetch --pin
 ```
 
-Add `--save` to any options to keep them for every later run. A config file is
+Add `--save` to keep options for every later run: `animfetch --no-color --save`
+saves and says so, and with `--pin` it saves and pins. A config file is
 optional: copy [`config.example.toml`](config.example.toml) to
 `~/.config/animfetch/config.toml`.
 

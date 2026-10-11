@@ -30,33 +30,43 @@ pub enum Existing {
     KeepAndSay,
 }
 
+/// What a call to [`start`] came to, which is not the same in the process the
+/// shell ran and in the one that went on to draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Started {
+    /// Pinned: the screen is set up and the animation runs in another process.
+    /// What was to be said can be said now, below the pane.
+    Pinned,
+    /// A pin was already there and was left as it is.
+    Kept,
+    /// The drawing process, once its animation has ended. It says nothing.
+    Finished,
+}
+
+/// What `--save` with `--pin` tells a terminal that kept its pin.
+pub const KEPT_NOTE: &str = "this terminal keeps the pin it has; new terminals start with the saved \
+settings\n(to change this one now: animfetch --unpin, then animfetch --pin)";
+
 /// Set up the screen, then detach and animate until the terminal goes away.
-pub fn start(fetch: &Fetch<'_>, existing: Existing) -> io::Result<()> {
+pub fn start(fetch: &Fetch<'_>, existing: Existing) -> io::Result<Started> {
     // Claiming is one atomic create, not a check followed by a write: two
     // shells starting on the same terminal at once could otherwise both see no
     // owner and both go on to animate the same rows.
     if !claim_terminal()? {
         match existing {
-            Existing::Keep => return Ok(()),
-            Existing::KeepAndSay => {
-                println!(
-                    "this terminal keeps the pin it has; new terminals start with the saved \
-                     settings\n(to change this one now: animfetch --unpin, then animfetch --pin)"
-                );
-                return Ok(());
-            }
+            Existing::Keep | Existing::KeepAndSay => return Ok(Started::Kept),
             Existing::Replace => {}
         }
 
         let mut out = io::stdout();
         let Some(old) = end_owner(&mut out)? else {
-            return Ok(());
+            return Ok(Started::Kept);
         };
         out.flush()?;
         wait_for_exit(old);
 
         if !claim_terminal()? {
-            return Ok(());
+            return Ok(Started::Kept);
         }
     }
 
@@ -99,7 +109,7 @@ pub fn start(fetch: &Fetch<'_>, existing: Existing) -> io::Result<()> {
             // to the shell until the file names the process doing the drawing,
             // or an --unpin run straight afterwards finds nothing pinned.
             write_pid_file(child)?;
-            return Ok(());
+            return Ok(Started::Pinned);
         }
     }
 
@@ -124,7 +134,7 @@ pub fn start(fetch: &Fetch<'_>, existing: Existing) -> io::Result<()> {
         term::RESET_SCROLL_REGION
     );
     let _ = io::stdout().flush();
-    result
+    result.map(|()| Started::Finished)
 }
 
 /// Stop the instance pinned to this terminal, if any.

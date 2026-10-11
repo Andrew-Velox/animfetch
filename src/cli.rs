@@ -143,6 +143,13 @@ impl Args {
         Ok(Parsed::Run(args))
     }
 
+    /// A `--save` that asks for nothing to be run: it keeps the settings and
+    /// says so. Starting a session on top would clear the screen over what it
+    /// had just said, and the run was for the config, not for a session.
+    pub fn saves_only(&self) -> bool {
+        self.save && !(self.pin || self.play || self.once || self.unpin)
+    }
+
     /// What happens to a pin already on this terminal. A bare `--pin` is the
     /// startup file's, which is no reason to disturb it. A run that saves is
     /// writing for the terminals still to be opened: it leaves this one as it
@@ -314,7 +321,9 @@ Options:
                           coloured icon per row, no labels), card (one box,
                           labels left, values right) or minimal (an icon and a
                           value per row, nothing else)
-      --save              Keep the settings given this run, for every run after
+      --save              Keep the settings given this run, for every run after.
+                          On its own it only saves; with --pin, --play or
+                          --once it saves and then runs
   -W, --width <COLS>      Cap the art width (0 fills the screen)
   -H, --height <ROWS>     Cap the art height (0 fills the screen)
   -s, --seconds <N>       How long --play animates
@@ -652,6 +661,19 @@ mod tests {
             let text: String = saved.iter().map(|(k, v)| format!("{k} = {v}\n")).collect();
             toml::from_str::<Config>(&text).unwrap();
         }
+    }
+
+    #[test]
+    fn a_save_on_its_own_does_not_start_a_session() {
+        assert!(run(&["--no-color", "--save"]).saves_only());
+        assert!(run(&["--save"]).saves_only());
+
+        // With a mode named, it saves and then does what was asked.
+        assert!(!run(&["--pin", "--no-color", "--save"]).saves_only());
+        assert!(!run(&["--play", "--save"]).saves_only());
+        assert!(!run(&["--once", "--style", "quad", "--save"]).saves_only());
+        // Nothing to save is nothing to hold back.
+        assert!(!run(&["--no-color"]).saves_only());
     }
 
     #[test]
