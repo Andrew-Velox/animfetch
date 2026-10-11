@@ -92,15 +92,20 @@ pub fn rows<'a>(items: &'a [Item], cfg: &Config) -> Vec<Row<'a>> {
     let round = cfg.icons && cfg.color;
 
     let key_of = |item: &Item| {
-        let code = icons::lookup(item.label).map_or_else(
+        let code = item.renamed_to().map_or_else(
             || {
-                item.label
-                    .chars()
-                    .take(2)
-                    .collect::<String>()
-                    .to_uppercase()
+                icons::lookup(item.label).map_or_else(
+                    || {
+                        item.label
+                            .chars()
+                            .take(2)
+                            .collect::<String>()
+                            .to_uppercase()
+                    },
+                    |g| g.code.to_string(),
+                )
             },
-            |g| g.code.to_string(),
+            str::to_string,
         );
         match (cfg.icons, icons::lookup(item.label)) {
             (true, glyph) => {
@@ -120,7 +125,7 @@ pub fn rows<'a>(items: &'a [Item], cfg: &Config) -> Vec<Row<'a>> {
             .map(|item| Row::Entry {
                 key: key_of(item),
                 round,
-                label: item.label,
+                label: item.name(),
                 text: text_of(item),
             })
             .collect();

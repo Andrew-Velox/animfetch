@@ -13,24 +13,33 @@ use crate::config::{Config, Module};
 ///
 /// Inert unless `live` is configured, in which case `items` is just the rows
 /// collected at startup and `tick` does nothing.
-pub struct Live<'a> {
-    modules: &'a [Module],
+pub struct Live {
+    /// The modules to re-read: the ones that move, less any whose reading the
+    /// user has replaced with their own text.
+    modules: Vec<Module>,
     items: Vec<Item>,
     every: Duration,
     next: Instant,
     active: bool,
 }
 
-impl<'a> Live<'a> {
-    pub fn new(cfg: &'a Config, items: &[Item]) -> Self {
+impl Live {
+    pub fn new(cfg: &Config, items: &[Item]) -> Self {
         let every = cfg.live_interval();
+        // A refresh would put the system's reading back over the user's text.
+        let modules: Vec<Module> = cfg
+            .modules()
+            .iter()
+            .copied()
+            .filter(|&m| !cfg.is_replaced(m))
+            .collect();
         Self {
-            modules: cfg.modules(),
+            // Nothing to watch means nothing to wake up for.
+            active: cfg.live && modules.iter().any(|m| m.is_live()),
+            modules,
             items: items.to_vec(),
             every,
             next: Instant::now() + every,
-            // Nothing to watch means nothing to wake up for.
-            active: cfg.live && cfg.modules().iter().any(|m| m.is_live()),
         }
     }
 
@@ -47,7 +56,7 @@ impl<'a> Live<'a> {
         // being asked (a full-screen program held the terminal) one refresh is
         // enough, not a burst to catch up.
         self.next = now + self.every;
-        refresh(self.modules, &mut self.items);
+        refresh(&self.modules, &mut self.items);
     }
 
     pub fn items(&self) -> &[Item] {
@@ -85,7 +94,9 @@ fn merge(items: &mut [Item], fresh: Vec<Item>) -> bool {
         let Some(i) = slot else { continue };
         taken[i] = true;
 
-        if items[i] != new {
+        // Not `items[i] != new`: the row may carry a name of the user's, which
+        // a fresh reading never does, and is not a change in what it says.
+        if items[i].value != new.value || items[i].detail != new.detail {
             // The numbers behind a usage row move with its text.
             items[i].value = new.value;
             items[i].detail = new.detail;
@@ -208,6 +219,43 @@ mod tests {
         live.tick();
         assert_eq!(live.items()[0].value, "1GiB");
         assert!(live.next < Instant::now(), "an inert Live must not re-arm");
+    }
+
+    #[test]
+    fn a_row_the_user_replaced_is_not_refreshed_over() {
+        let cfg: Config = toml::from_str(
+            "live = true\nmodules = [\"memory\", \"uptime\"]\n\
+             [overrides.memory]\nvalue = \"plenty\"",
+        )
+        .unwrap();
+        let live = Live::new(&cfg, &[item("Memory", "plenty")]);
+
+        assert_eq!(live.modules, [Module::Uptime]);
+        assert!(live.active, "uptime still moves");
+
+        let only: Config = toml::from_str(
+            "live = true\nmodules = [\"memory\"]\n[overrides.memory]\nvalue = \"x\"",
+        )
+        .unwrap();
+        assert!(!Live::new(&only, &[]).active, "nothing left to watch");
+    }
+
+    #[test]
+    fn a_renamed_row_keeps_its_name_when_its_value_moves() {
+        let mut rows = vec![Item::new("Memory", "1GiB").renamed("Ram")];
+        let changed = merge(&mut rows, vec![item("Memory", "2GiB")]);
+
+        assert!(changed);
+        assert_eq!(rows[0].value, "2GiB");
+        assert_eq!(rows[0].name(), "Ram");
+    }
+
+    #[test]
+    fn a_renamed_row_with_an_unmoved_value_is_not_a_change() {
+        // The name is the user's, so a fresh reading never carries it. That
+        // must not look like a change and repaint the pane every tick.
+        let mut rows = vec![Item::new("Memory", "1GiB").renamed("Ram")];
+        assert!(!merge(&mut rows, vec![item("Memory", "1GiB")]));
     }
 
     #[test]

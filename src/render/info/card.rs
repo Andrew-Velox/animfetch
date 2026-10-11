@@ -74,6 +74,10 @@ fn mount_label(mount: Option<&str>) -> String {
 }
 
 fn label_of(item: &Item) -> String {
+    // Their own word wins over the style's ("Ram", the mount's name).
+    if let Some(name) = item.renamed_to() {
+        return name.to_string();
+    }
     match (item.label, &item.detail) {
         ("Memory", _) => "Ram".to_string(),
         ("Disk", Some(Detail::Usage(u))) => mount_label(u.name.as_deref()),

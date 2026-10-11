@@ -123,12 +123,12 @@ fn entries(labels: &[&str], items: &[Item]) -> Vec<Entry> {
         .iter()
         .flat_map(|&label| items.iter().filter(move |i| i.label == label))
         .map(|item| Entry {
-            label: item.label,
+            label: item.name(),
             icon: PICTURES
                 .iter()
                 .find(|(l, _)| *l == item.label)
                 .map_or(icons::glyph(item.label).icon, |(_, icon)| icon),
-            short: icons::glyph(item.label).short,
+            short: item.renamed_to().unwrap_or(icons::glyph(item.label).short),
             text: text_of(item),
         })
         .collect()

@@ -22,6 +22,7 @@ mod palette;
 mod pin;
 mod prompt;
 mod render;
+mod rows;
 mod term;
 
 use std::io::{self, IsTerminal};

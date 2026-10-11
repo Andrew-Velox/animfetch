@@ -316,6 +316,55 @@ a matugen, pywal or wallust palette. Under `--pin` it re-reads on change, so
 retheming recolours the running animation. Try it with `animfetch --once
 --palette`.
 
+### Renaming and replacing rows
+
+Any built-in row can be given a name of your own, or text or a command in place
+of what the machine says, under `[overrides.<module>]`. The names are the ones
+`modules` takes:
+
+```toml
+modules = ["os", "kernel", "uptime", "custom", "shell"]
+
+[overrides.os]
+label = "Distro"                  # the name shown for the row
+
+[overrides.kernel]
+value = "my-own-kernel 1.0"       # shown instead of what the machine reports
+
+[overrides.uptime]
+label = "Up"
+command = "uptime -p"             # the first line this prints is the value
+
+[[custom]]                        # a row of your own, from text or a command
+label = "Public IP"
+command = "curl -s --max-time 1 ifconfig.me"
+
+[[custom]]
+label = "Editor"
+value = "helix"
+```
+
+- `label`, `value` and `command` are each optional, but an override has to say
+  at least one, and `value` and `command` are alternatives.
+- A rename is only the name. The row keeps its icon, its place and its live
+  updates, and the styles that print no names (`iconic`, `tree`, `sections`
+  headings) are unchanged by it.
+- A `value` or `command` is shown as a plain line in every style, so the usage
+  bars and figures a style would draw for a memory or disk row are replaced by
+  your text. The row is not refreshed by `live`, since it is not the machine's
+  reading any more. A module the machine cannot read (a `battery` on a desktop)
+  still shows your text, since you wrote the row.
+- A command runs with `sh -c`, with your privileges, like anything in your
+  shell's startup files; nothing in animfetch's own files runs one. Only the
+  first non-empty line is used, with control characters removed, and its
+  exit status is not asked about. Commands all start together, so the wait is
+  the slowest, and one that prints nothing or takes longer than
+  `command_timeout` seconds (default 1, at most 10) leaves its row out. Each
+  runs once, at startup.
+- A mistake (an unknown module, a `value` with a `command`, an empty table) is
+  reported with its line number and the config is not used, like any other
+  config error.
+
 
 ## Stargazers ⭐
 

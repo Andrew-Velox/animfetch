@@ -153,6 +153,80 @@ mod tests {
     use unicode_width::UnicodeWidthStr;
 
     #[test]
+    fn a_name_of_their_own_is_shown_by_the_styles_that_show_names() {
+        let items: Vec<Item> = vec![
+            Item::new("OS", "Arch").renamed("Distro"),
+            Item::new("Kernel", "7.2").renamed("Core"),
+            Item::new("CPU", "Ryzen").renamed("Brain"),
+        ];
+
+        // Classic, boxed, chips, minimal and card print a name. The others
+        // (tree, iconic, sections) are built from icons and fixed headings.
+        for style in [
+            InfoStyle::Classic,
+            InfoStyle::Boxed,
+            InfoStyle::Chips,
+            InfoStyle::Minimal,
+            InfoStyle::Card,
+        ] {
+            let cfg = Config {
+                info_style: style,
+                icons: false,
+                modules: Some(vec![
+                    crate::config::Module::Os,
+                    crate::config::Module::Kernel,
+                    crate::config::Module::Cpu,
+                ]),
+                ..plain_cfg()
+            };
+            let lines = compose(&scene(&[], 0, "me@box", &items, 100), &cfg);
+            let text = strip_ansi(&lines.join("\n"));
+            assert!(text.contains("Distro"), "{style:?}:\n{text}");
+            assert!(text.contains("Core"), "{style:?}:\n{text}");
+            assert!(!text.contains("Kernel"), "{style:?} still says Kernel:\n{text}");
+        }
+    }
+
+    #[test]
+    fn no_style_draws_a_long_name_of_their_own_wider_than_the_terminal() {
+        let long = "A name somebody wrote with far too many words in it to ever fit";
+        let items: Vec<Item> = sample_items()
+            .into_iter()
+            .map(|i| if i.label.is_empty() { i } else { i.renamed(long) })
+            .collect();
+        let art: Vec<String> = vec!["####".into(), "#  #".into(), "####".into()];
+
+        for style in [
+            InfoStyle::Classic,
+            InfoStyle::Boxed,
+            InfoStyle::Tree,
+            InfoStyle::Sections,
+            InfoStyle::Chips,
+            InfoStyle::Iconic,
+            InfoStyle::Card,
+            InfoStyle::Minimal,
+        ] {
+            for icons in [true, false] {
+                let cfg = Config {
+                    info_style: style,
+                    icons,
+                    ..plain_cfg()
+                };
+                for width in [20, 30, 40, 60, 80, 120] {
+                    let lines = compose(&scene(&art, 4, "me@box", &items, width), &cfg);
+                    for line in &lines {
+                        let seen = strip_ansi(line).width();
+                        assert!(
+                            seen <= width,
+                            "{style:?} icons={icons} width {width} drew {seen}:\n{line}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn no_style_lets_a_border_push_a_line_past_the_terminal() {
         // The same invariant, with ornaments in the way: a left border takes
         // columns before everything else and a bottom one takes rows after.

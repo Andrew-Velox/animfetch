@@ -5,7 +5,12 @@ use super::format::{format_usage, human_kib_fixed, shared_unit};
 /// One info row. An empty `label` spans the full width (the colour swatches).
 #[derive(Clone, PartialEq)]
 pub struct Item {
+    /// What the row is: how a style finds its icon and its place, and how a
+    /// refresh pairs a reading with its row. Never the user's wording.
     pub label: &'static str,
+    /// The user's own name for the row, from `overrides`. Shown instead of the
+    /// style's usual name for it, wherever a style shows one.
+    renamed: Option<&'static str>,
     /// The text every style can show.
     pub value: String,
     /// What a style with room for more shows instead of `value`. The classic
@@ -120,9 +125,29 @@ impl Item {
     pub fn new(label: &'static str, value: impl Into<String>) -> Self {
         Self {
             label,
+            renamed: None,
             value: value.into(),
             detail: None,
         }
+    }
+
+    /// The same row under the user's own name. The name is leaked, like a
+    /// custom row's label: rows carry `&'static str`, there are a handful, and
+    /// they are made once.
+    pub fn renamed(mut self, name: &str) -> Self {
+        self.renamed = Some(Box::leak(name.to_string().into_boxed_str()));
+        self
+    }
+
+    /// The user's name for the row, if they gave one.
+    pub fn renamed_to(&self) -> Option<&'static str> {
+        self.renamed
+    }
+
+    /// What the row is called on screen where a style prints its label as it
+    /// is: the user's name, else the label.
+    pub fn name(&self) -> &'static str {
+        self.renamed.unwrap_or(self.label)
     }
 
     /// A row from a reading that may be missing, which skips the row.
@@ -137,6 +162,7 @@ impl Item {
         let figures = format_usage(usage.used_kib, usage.total_kib);
         Some(Self {
             label,
+            renamed: None,
             // Rows that repeat a label are told apart by what they measure.
             value: match &usage.name {
                 Some(name) => format!("{name}: {figures}"),
@@ -161,6 +187,7 @@ impl Item {
     pub fn duration(label: &'static str, secs: u64, text: impl Into<String>) -> Self {
         Self {
             label,
+            renamed: None,
             value: text.into(),
             detail: Some(Detail::Duration(secs)),
         }
@@ -171,6 +198,7 @@ impl Item {
         let status = status.into();
         Self {
             label,
+            renamed: None,
             value: format!("{percent}% [{status}]"),
             detail: Some(Detail::Charge(Charge { percent, status })),
         }
