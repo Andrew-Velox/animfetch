@@ -369,11 +369,18 @@ impl<'a> Layout<'a> {
 
     /// What to draw for frame `phase`.
     pub fn scene(&self, phase: usize) -> render::Scene<'_> {
+        self.scene_with(phase, self.items)
+    }
+
+    /// Like [`Self::scene`], with the info rows swapped for fresher ones. The
+    /// art stays as scaled: it was sized from the rows this layout was built
+    /// with, and a changing number is not a reason to resize it.
+    pub fn scene_with<'s>(&'s self, phase: usize, items: &'s [Item]) -> render::Scene<'s> {
         render::Scene {
             art: &self.frames[phase % self.frames.len()],
             art_w: self.art_w,
             title: self.title,
-            items: self.items,
+            items,
             phase,
             width: self.width,
         }
@@ -430,6 +437,7 @@ fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
 
     let mut prompt = Prompt::new(cfg);
     let mut pane = Pane::new();
+    let mut live = crate::fetch::Live::new(cfg, fetch.items);
 
     let (cols, mut rows) = term::size();
     let mut layout = Layout::pinned(fetch, cols, rows);
@@ -444,8 +452,10 @@ fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
     let mut prompt_dirty = true;
 
     'session: loop {
+        live.tick();
+
         if let Some(split) = &split {
-            let lines = render::compose(&layout.scene(phase), cfg);
+            let lines = render::compose(&layout.scene_with(phase, live.items()), cfg);
             pane.paint(&mut stdout, &lines, split.pane_h)?;
         }
 
@@ -688,6 +698,7 @@ struct Args {
     once: bool,
     no_color: bool,
     palette: bool,
+    live: bool,
 }
 
 impl Args {
@@ -716,6 +727,7 @@ impl Args {
                 }
                 "--no-color" => args.no_color = true,
                 "--palette" => args.palette = true,
+                "--live" => args.live = true,
                 "-a" | "--animation" => {
                     args.animation = Some(argv.next().ok_or("--animation needs a name")?);
                 }
@@ -797,6 +809,9 @@ impl Args {
         if self.palette {
             cfg.color_source = config::ColorSource::Palette;
         }
+        if self.live {
+            cfg.live = true;
+        }
     }
 }
 
@@ -829,6 +844,8 @@ Options:
   -s, --seconds <N>       How long --play animates
       --palette           Take colours from your desktop's generated palette
                           (matugen, pywal, wallust) instead of the config
+      --live              Keep uptime, memory, swap and disk current while
+                          pinned or interactive (interval: live_interval)
       --no-color          Disable colour output
   -h, --help              Show this help
   -V, --version           Show the version

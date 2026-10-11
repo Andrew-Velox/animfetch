@@ -65,6 +65,18 @@ pub enum Module {
     Colors,
 }
 
+impl Module {
+    /// Whether the row's value changes while the fetch is on screen. These are
+    /// the only rows `live` re-reads; the rest (OS, kernel, CPU model...) are
+    /// facts about the machine, and re-reading them would be wasted work.
+    pub fn is_live(self) -> bool {
+        matches!(
+            self,
+            Module::Uptime | Module::Memory | Module::Swap | Module::Disk
+        )
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
@@ -103,6 +115,11 @@ pub struct Config {
     pub height: usize,
     /// Seconds the startup form (`--play`) animates before handing back.
     pub play_seconds: f32,
+    /// Keep the info rows whose numbers move current while the fetch is pinned
+    /// or interactive. Off by default, so an update never changes a fetch.
+    pub live: bool,
+    /// Seconds between refreshes when `live` is on. Clamped to 0.5-60.
+    pub live_interval: f32,
     /// Emit colour. Forced off when piped or when `NO_COLOR` is set.
     pub color: bool,
     pub modules: Vec<Module>,
@@ -145,6 +162,8 @@ impl Default for Config {
             width: 56,
             height: 20,
             play_seconds: 3.0,
+            live: false,
+            live_interval: 2.0,
             color: true,
             modules: vec![
                 Module::Os,
@@ -170,6 +189,12 @@ impl Config {
     pub fn frame_interval(&self) -> std::time::Duration {
         let fps = self.fps.clamp(1.0, 120.0);
         std::time::Duration::from_secs_f32(1.0 / fps)
+    }
+
+    /// How often live rows are re-read, clamped so a typo can neither spin the
+    /// loop nor leave the numbers frozen for minutes.
+    pub fn live_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs_f32(self.live_interval.clamp(0.5, 60.0))
     }
 
     /// Columns the art may occupy, given how many are actually available.
@@ -347,6 +372,32 @@ mod tests {
             off.ink(&[' ', '#']),
             crate::anim::Ink::Raw { color: false }
         ));
+    }
+
+    #[test]
+    fn live_is_off_unless_asked_for() {
+        // An update must not start re-reading the system under anyone.
+        let cfg = Config::default();
+        assert!(!cfg.live);
+        assert_eq!(cfg.live_interval(), std::time::Duration::from_secs(2));
+    }
+
+    #[test]
+    fn live_interval_is_clamped_both_ways() {
+        let fast: Config = toml::from_str("live_interval = 0.0").unwrap();
+        assert_eq!(fast.live_interval(), std::time::Duration::from_millis(500));
+
+        let slow: Config = toml::from_str("live_interval = 9999.0").unwrap();
+        assert_eq!(slow.live_interval(), std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn only_rows_that_move_are_live() {
+        assert!(Module::Memory.is_live());
+        assert!(Module::Uptime.is_live());
+        assert!(!Module::Cpu.is_live());
+        assert!(!Module::Os.is_live());
+        assert!(!Module::Colors.is_live());
     }
 
     #[test]

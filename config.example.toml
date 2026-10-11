@@ -26,6 +26,21 @@ height = 20
 # How long `animfetch --play` animates before handing back to your shell.
 play_seconds = 3.0
 
+# Keep the rows whose numbers move (uptime, memory, swap, disk) current while
+# the fetch is on screen, instead of showing what they were at startup.
+#
+# Applies to `--pin` and the interactive mode. `--play` is too short to matter
+# and `--once` is a single frame, so neither refreshes. Nothing is read while a
+# full-screen program such as vim has the terminal, rows are never added or
+# removed, and the art is never resized by a changing number.
+#
+# Off by default. `animfetch --pin --live` turns it on for one run.
+live = false
+
+# Seconds between refreshes when `live` is on. Clamped to 0.5-60. Each refresh
+# is a couple of file reads, and only rows whose text changed are repainted.
+live_interval = 2.0
+
 # How the art is drawn.
 #
 #   half  Two vertical samples per cell, drawn with half blocks (▀▄█). Solid

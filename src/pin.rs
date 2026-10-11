@@ -119,6 +119,9 @@ fn animate(fetch: &Fetch<'_>, shell_pgid: libc::pid_t, shell_pid: libc::pid_t) -
     // Only colours can change under a pinned fetch. `cfg` still owns geometry.
     let mut theme = cfg.clone();
     let mut palette = palette::Watch::new(cfg);
+    // Ticked only while we hold the terminal, so nothing is read for a pane
+    // that is hidden behind a full-screen program.
+    let mut live = crate::fetch::Live::new(cfg, fetch.items);
 
     let (mut cols, mut rows) = term::size();
     let mut layout = Layout::pinned(fetch, cols, rows);
@@ -168,8 +171,10 @@ fn animate(fetch: &Fetch<'_>, shell_pgid: libc::pid_t, shell_pid: libc::pid_t) -
                 pane.invalidate();
             }
 
+            live.tick();
+
             if let Some(split) = &split {
-                let lines = render::compose(&layout.scene(phase), &theme);
+                let lines = render::compose(&layout.scene_with(phase, live.items()), &theme);
                 // A failed write means the terminal is gone.
                 if pane.paint(&mut stdout, &lines, split.pane_h).is_err() {
                     return Ok(());

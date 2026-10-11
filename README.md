@@ -181,6 +181,11 @@ falls back to defaults.
 
 [example]: https://github.com/Andrew-Velox/animfetch/blob/main/config.example.toml
 
+Set `live = true` (or pass `--live`) and the uptime, memory, swap and disk
+rows keep updating while the fetch is pinned, every `live_interval` seconds
+(default 2). It is off by default, only touches those four rows, and pauses
+while a full-screen program like `vim` has the terminal.
+
 Set `color_source = "palette"` and the fetch follows your desktop theme, reading
 a matugen, pywal or wallust palette. Under `--pin` it re-reads on change, so
 retheming recolours the running animation. Try it with `animfetch --once
