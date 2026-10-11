@@ -90,7 +90,7 @@ impl Bitmap {
     /// The same picture with the hue taken out of every pixel. Transparency is
     /// left as it was.
     pub fn grayscale(mut self) -> Self {
-        for px in self.rgba.chunks_exact_mut(4) {
+        for px in self.rgba.as_chunks_mut::<4>().0 {
             let crate::color::Rgb(y, _, _) = crate::color::Rgb(px[0], px[1], px[2]).gray();
             px[..3].fill(y);
         }
@@ -505,7 +505,7 @@ mod tests {
         }
         .grayscale();
 
-        for px in b.rgba.chunks_exact(4) {
+        for px in b.rgba.as_chunks::<4>().0 {
             assert!(px[0] == px[1] && px[1] == px[2], "{px:?}");
         }
         assert_eq!((b.rgba[3], b.rgba[7]), (255, 0));
