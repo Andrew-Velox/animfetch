@@ -40,6 +40,13 @@ impl Rgb {
         (0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b)) / 255.0
     }
 
+    /// The grey of the same brightness: no hue, and as light or dark as this
+    /// colour looks, so shading and contrast survive the loss of colour.
+    pub fn gray(self) -> Self {
+        let y = (self.luma() * 255.0).round() as u8;
+        Rgb(y, y, y)
+    }
+
     /// Near-black or near-white, whichever can be read on this colour.
     pub fn contrast(self) -> Self {
         if self.luma() > 0.5 {
@@ -200,6 +207,21 @@ mod tests {
             let Rgb(r, g, b) = rgb;
             assert_eq!(out, format!("\x1b[38;2;{r};{g};{b}m"));
         }
+    }
+
+    #[test]
+    fn gray_keeps_the_brightness_and_drops_the_hue() {
+        assert_eq!(Rgb(0, 0, 0).gray(), Rgb(0, 0, 0));
+        assert_eq!(Rgb(255, 255, 255).gray(), Rgb(255, 255, 255));
+        assert_eq!(Rgb(77, 77, 77).gray(), Rgb(77, 77, 77));
+
+        for rgb in [Rgb(255, 0, 0), Rgb(0, 200, 90), Rgb(30, 60, 220)] {
+            let Rgb(r, g, b) = rgb.gray();
+            assert!(r == g && g == b, "{rgb:?} came out with a hue");
+        }
+        // Green is the brightest of the three primaries, blue the darkest.
+        assert!(Rgb(0, 255, 0).gray().0 > Rgb(255, 0, 0).gray().0);
+        assert!(Rgb(255, 0, 0).gray().0 > Rgb(0, 0, 255).gray().0);
     }
 
     #[test]

@@ -123,6 +123,13 @@ animfetch            # interactive: animfetch owns the prompt
 scroll, then detaches and paints them while your own shell runs underneath with
 its history, completion and aliases intact. Undo with `animfetch --unpin`.
 
+A terminal holds one pin. A bare `animfetch --pin`, which is what a shell's
+startup file runs, leaves a pin that is already there alone, so nested shells
+stay quiet. `--pin` with settings (`animfetch --pin --no-color`) replaces it,
+so a line you type takes effect at once. A run with `--save` does not: it
+writes the settings, says so, and leaves this terminal as it is; terminals you
+open after that start with them.
+
 ```sh
 animfetch -a cat-tail        # different animation, this run only
 animfetch --style quad       # half (default), quad, ramp, or raw
@@ -130,7 +137,8 @@ animfetch --width 40         # cap the art width (0 fills the screen)
 animfetch --height 12        # both caps apply, aspect ratio is kept
 animfetch --fps 20
 animfetch --play -s 1.5      # shorter intro
-animfetch --no-color
+animfetch --no-color         # everything in shades of grey
+animfetch --def-color        # the default colours, from your theme: undoes --no-color
 ```
 
 Piping the output, or `NO_COLOR=1`, drops to the static path automatically.
@@ -180,6 +188,7 @@ and another along its bottom, drawn from PNG line art:
 
 ```sh
 animfetch --pin --border-left 00 --border-bottom 03
+animfetch --pin --lb 00 --db 03   # the same, shorter: --lb left, --db down
 animfetch --list-borders          # what is built in, and your own
 animfetch --pin --no-border       # for this run only
 ```
@@ -205,9 +214,10 @@ pictures even where they are not detected.
 A bottom image is stored upright, hilt at the top, and is turned a quarter
 clockwise so it lies along the bottom. The art and the info give up the room a
 border takes, and it is left out on a terminal under 60 columns and when the
-output is not a terminal. `--no-color` and `NO_COLOR` do not remove the
-pictures, which have no colour to turn off; they do remove the `"cells"`
-drawing, which is coloured text.
+output is not a terminal. `--no-color` draws the pictures in grey, like the
+rest. `NO_COLOR` and `color = false` leave the pictures as they are, which have
+no colour to turn off, and remove the `"cells"` drawing, which is coloured
+text.
 
 Put your own PNGs in `~/.config/animfetch/border/left_border/` and
 `.../bottom_border/`; a file of yours shadows a built-in of the same name. They

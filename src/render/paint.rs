@@ -67,7 +67,7 @@ impl<'a> Painter<'a> {
 
     fn fg(&mut self, color: Rgb) {
         if self.cfg.color {
-            color.fg(self.out);
+            self.cfg.tone(color).fg(self.out);
         }
     }
 
@@ -132,7 +132,7 @@ impl<'a> Painter<'a> {
             self.out.push(CAP_LEFT);
             self.reset();
         }
-        bg.bg(self.out);
+        self.cfg.tone(bg).bg(self.out);
         self.fg(fg);
         self.out.push(' ');
         self.out.push_str(text);
@@ -168,7 +168,7 @@ impl<'a> Painter<'a> {
     /// A glyph in one of the terminal's own eight colours. Without colour it
     /// is the plain glyph, so colour being off never leaves an escape behind.
     pub fn mark(&mut self, code: u8, glyph: char) {
-        if self.cfg.color {
+        if self.cfg.swatches() {
             self.out.push_str(&format!("\x1b[3{code}m"));
         }
         self.out.push(glyph);
@@ -231,7 +231,7 @@ impl<'a> Painter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::test_util::plain_cfg;
+    use crate::render::test_util::{plain_cfg, strip_ansi};
 
     fn colored() -> Config {
         Config {
@@ -245,6 +245,36 @@ mod tests {
             color: false,
             ..plain_cfg()
         }
+    }
+
+    #[test]
+    fn grey_writes_the_same_text_with_no_hue_in_any_colour() {
+        let cfg = Config {
+            gray: true,
+            ..colored()
+        };
+        let mut out = String::new();
+        let mut p = Painter::new(&mut out, &cfg);
+        p.text(Rgb(255, 0, 0), "a");
+        p.chip(Rgb(0, 0, 255), Rgb(0, 255, 0), "b", false);
+        p.mark(1, '●');
+
+        // Every colour that went out has equal red, green and blue.
+        let mut colours = 0;
+        for part in out.split("\x1b[").skip(1) {
+            let Some(params) = part.split('m').next() else {
+                continue;
+            };
+            let n: Vec<u8> = params.split(';').filter_map(|v| v.parse().ok()).collect();
+            if let [38 | 48, 2, r, g, b] = n[..] {
+                colours += 1;
+                assert!(r == g && g == b, "{params} has a hue in {out:?}");
+            }
+            // And not one of the terminal's own palette colours.
+            assert!(!matches!(n[..], [30..=37]), "{out:?}");
+        }
+        assert!(colours >= 3, "{out:?}");
+        assert_eq!(strip_ansi(&out), "a b ●");
     }
 
     #[test]

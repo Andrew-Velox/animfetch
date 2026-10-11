@@ -444,8 +444,12 @@ pub struct Config {
     pub live: bool,
     /// Seconds between refreshes when `live` is on. Clamped to 0.5-60.
     pub live_interval: f32,
-    /// Emit colour. Forced off when piped or when `NO_COLOR` is set.
+    /// Emit colour. Forced off when piped or when `NO_COLOR` is set. Off, the
+    /// output carries no colour codes at all and so takes the terminal's own.
     pub color: bool,
+    /// Draw in shades of grey: colour is still sent, with no hue in it, so the
+    /// light and dark of the art and the text stay. Set by `--no-color`.
+    pub gray: bool,
     /// Rows to show, in order. Unset means the preset for `info_style`; set,
     /// it wins whatever the style is.
     pub modules: Option<Vec<Module>>,
@@ -520,6 +524,7 @@ impl Default for Config {
             live: false,
             live_interval: 2.0,
             color: true,
+            gray: false,
             modules: None,
             custom: Vec::new(),
             overrides: BTreeMap::new(),
@@ -615,6 +620,17 @@ impl Config {
         } else {
             ramp
         }
+    }
+
+    /// A colour as it will be drawn: itself, or its grey under `gray`.
+    pub fn tone(&self, color: Rgb) -> Rgb {
+        if self.gray { color.gray() } else { color }
+    }
+
+    /// Whether the rows of the terminal's own palette colours are shown. They
+    /// are nothing but colour, so grey has no use for them.
+    pub fn swatches(&self) -> bool {
+        self.color && !self.gray
     }
 
     /// How to turn coverage into glyphs, for the configured style.
@@ -1155,5 +1171,21 @@ mod tests {
             ColorSource::Config,
             "the example must not change behaviour"
         );
+    }
+
+    #[test]
+    fn gray_is_a_setting_and_it_hides_the_swatches_with_colour_off() {
+        assert!(!Config::default().gray);
+        let cfg: Config = toml::from_str("gray = true").unwrap();
+        assert!(cfg.gray && cfg.color);
+        assert!(!cfg.swatches(), "palette colours in a grey fetch");
+
+        assert!(Config::default().swatches());
+        let plain: Config = toml::from_str("color = false").unwrap();
+        assert!(!plain.swatches());
+
+        let c = Rgb(200, 30, 30);
+        assert_eq!(Config::default().tone(c), c);
+        assert_eq!(cfg.tone(c), c.gray());
     }
 }

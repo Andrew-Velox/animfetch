@@ -204,7 +204,7 @@ pub fn rows(title: &str, items: &[Item], cfg: &Config) -> Vec<Row> {
         rows.extend(lines(block));
     }
 
-    if cfg.color && items.iter().any(is_swatch) {
+    if cfg.swatches() && items.iter().any(is_swatch) {
         rows.push(Row::Blank);
         rows.push(Row::Shapes);
     }

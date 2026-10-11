@@ -217,9 +217,10 @@ impl Borders {
         // pictures and was not told to use text. A name that is wrong is still
         // wrong, so it is still reported.
         //
-        // Colour is not asked of a picture: `--no-color` is about the text.
+        // Colour is not asked of a picture: `color = false` is about the text.
         // Only the text drawing of a border is a thing to colour, and without
-        // colour it is not drawn.
+        // colour it is not drawn. Grey is a colour setting of its own, and the
+        // pictures are taken to grey with the rest.
         let mode = if to_terminal {
             Mode::resolve(cfg.border_render, images && kitty::supported())
                 .filter(|m| *m == Mode::Image || cfg.color)
@@ -242,6 +243,7 @@ impl Borders {
             let bitmap = Bitmap::decode(&bytes).map_err(|e| format!("border {spec:?}: {e}"))?;
             bitmap
                 .trimmed()
+                .map(|b| if cfg.gray { b.grayscale() } else { b })
                 .map(Some)
                 .ok_or_else(|| format!("border {spec:?} has nothing visible in it"))
         };

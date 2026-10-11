@@ -142,7 +142,10 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
         return Ok(ExitCode::SUCCESS);
     }
 
-    let animation = Animation::load(anim_dir.as_deref(), &cfg.animation)?;
+    let mut animation = Animation::load(anim_dir.as_deref(), &cfg.animation)?;
+    if cfg.color && cfg.gray {
+        animation.grayscale();
+    }
 
     // A border that cannot be read is an error now, like an unknown animation,
     // rather than a pane that quietly has no ornament.
@@ -171,7 +174,7 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
     }
 
     if args.pin {
-        return pin::start(&fetch).map(|()| ExitCode::SUCCESS);
+        return pin::start(&fetch, args.existing_pin()).map(|()| ExitCode::SUCCESS);
     }
 
     if args.play {

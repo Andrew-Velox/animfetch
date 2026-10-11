@@ -41,7 +41,7 @@ impl Prompt {
                 return text.to_string();
             }
             let mut out = String::new();
-            color.fg(&mut out);
+            cfg.tone(color).fg(&mut out);
             out.push_str(text);
             out.push_str(RESET);
             out

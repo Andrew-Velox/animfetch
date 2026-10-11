@@ -16,15 +16,48 @@ use crate::{palette, render, term};
 /// How often to re-check the terminal size while pinned.
 const RESIZE_POLL: Duration = Duration::from_millis(500);
 
+/// What a `--pin` does about a pin that is already on the terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Existing {
+    /// Take the terminal over: the run has settings of its own to look at.
+    Replace,
+    /// Leave it, and say nothing: a nested shell running the rc file's bare
+    /// `--pin`, where noise on every subshell gets a tool uninstalled.
+    Keep,
+    /// Leave it, and say so: a run that saves is for the terminals still to be
+    /// opened, and without a word the old look here reads as the save having
+    /// done nothing.
+    KeepAndSay,
+}
+
 /// Set up the screen, then detach and animate until the terminal goes away.
-pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
+pub fn start(fetch: &Fetch<'_>, existing: Existing) -> io::Result<()> {
     // Claiming is one atomic create, not a check followed by a write: two
     // shells starting on the same terminal at once could otherwise both see no
     // owner and both go on to animate the same rows.
     if !claim_terminal()? {
-        // A nested shell, most likely. Silent because this runs from an rc
-        // file, where noise on every subshell gets a tool uninstalled.
-        return Ok(());
+        match existing {
+            Existing::Keep => return Ok(()),
+            Existing::KeepAndSay => {
+                println!(
+                    "this terminal keeps the pin it has; new terminals start with the saved \
+                     settings\n(to change this one now: animfetch --unpin, then animfetch --pin)"
+                );
+                return Ok(());
+            }
+            Existing::Replace => {}
+        }
+
+        let mut out = io::stdout();
+        let Some(old) = end_owner(&mut out)? else {
+            return Ok(());
+        };
+        out.flush()?;
+        wait_for_exit(old);
+
+        if !claim_terminal()? {
+            return Ok(());
+        }
     }
 
     let (cols, rows) = term::size();
@@ -96,27 +129,48 @@ pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
 
 /// Stop the instance pinned to this terminal, if any.
 pub fn stop() -> io::Result<bool> {
-    let Some(pid) = live_owner()? else {
+    let mut stdout = io::stdout();
+    if end_owner(&mut stdout)?.is_none() {
         return Ok(false);
+    }
+
+    write!(stdout, "{}{}", term::CLEAR_SCREEN, term::move_to(1, 1))?;
+    stdout.flush()?;
+    Ok(true)
+}
+
+/// Signal the pinned process, free the terminal for the next claim and take its
+/// pictures and its scroll region away. Its pid, or `None` if nothing was there.
+fn end_owner(out: &mut impl Write) -> io::Result<Option<libc::pid_t>> {
+    let Some(pid) = live_owner()? else {
+        return Ok(None);
     };
 
     // SAFETY: `pid` came from our pid file and was just confirmed alive.
     unsafe { libc::kill(pid, libc::SIGTERM) };
     let _ = std::fs::remove_file(pid_path()?);
 
-    let mut stdout = io::stdout();
     let mut gone = String::new();
     crate::border::clear_if_supported(&mut gone);
     write!(
-        stdout,
-        "{gone}{}{}{}",
+        out,
+        "{gone}{}{}",
         term::RESET_ORIGIN_MODE,
-        term::RESET_SCROLL_REGION,
-        term::CLEAR_SCREEN
+        term::RESET_SCROLL_REGION
     )?;
-    write!(stdout, "{}", term::move_to(1, 1))?;
-    stdout.flush()?;
-    Ok(true)
+    Ok(Some(pid))
+}
+
+/// Until `pid` is gone, so it cannot paint one more frame over its successor.
+/// Bounded: a process that will not go is not worth hanging a shell for.
+fn wait_for_exit(pid: libc::pid_t) {
+    for _ in 0..50 {
+        // SAFETY: signal 0 checks permission without delivering.
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn animate(fetch: &Fetch<'_>, shell_pgid: libc::pid_t, shell_pid: libc::pid_t) -> io::Result<()> {

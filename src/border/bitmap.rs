@@ -87,6 +87,16 @@ impl Bitmap {
         ]
     }
 
+    /// The same picture with the hue taken out of every pixel. Transparency is
+    /// left as it was.
+    pub fn grayscale(mut self) -> Self {
+        for px in self.rgba.chunks_exact_mut(4) {
+            let crate::color::Rgb(y, _, _) = crate::color::Rgb(px[0], px[1], px[2]).gray();
+            px[..3].fill(y);
+        }
+        self
+    }
+
     /// A quarter turn clockwise: what was the top is now the right.
     pub fn rotated_cw(&self) -> Self {
         let mut out = Self::blank(self.h, self.w);
@@ -484,5 +494,20 @@ mod tests {
         assert_eq!(canvas.pixel(3, 3), [1, 1, 1, 255]);
         assert_eq!(canvas.pixel(1, 1), [0, 0, 0, 0]);
         assert_eq!(canvas.rgba.len(), 4 * 4 * 4, "nothing grew");
+    }
+
+    #[test]
+    fn grayscale_drops_the_hue_and_leaves_transparency_alone() {
+        let b = Bitmap {
+            w: 2,
+            h: 1,
+            rgba: vec![255, 0, 0, 255, 10, 200, 30, 0],
+        }
+        .grayscale();
+
+        for px in b.rgba.chunks_exact(4) {
+            assert!(px[0] == px[1] && px[1] == px[2], "{px:?}");
+        }
+        assert_eq!((b.rgba[3], b.rgba[7]), (255, 0));
     }
 }
