@@ -6,7 +6,6 @@ use crate::color::{Rgb, Sgr};
 
 pub const DEFAULT_NAME: &str = "cat-run";
 
-
 include!(concat!(env!("OUT_DIR"), "/bundled.rs"));
 
 pub struct Frame {
@@ -69,7 +68,6 @@ impl Frame {
         }
     }
 
-
     fn enclosed_holes(ink: &[bool], width: usize, height: usize) -> Vec<bool> {
         if width == 0 || height == 0 {
             return Vec::new();
@@ -103,7 +101,6 @@ impl Frame {
         Self::drop_specks(&mut hole, width, height);
         hole
     }
-
 
     const MIN_HOLE_CELLS: usize = 2;
 
@@ -181,7 +178,6 @@ impl Frame {
             })
             .collect()
     }
-
 
     #[allow(clippy::too_many_arguments)]
     fn write_cell(
@@ -285,7 +281,6 @@ const QUADRANTS: [char; 16] = [
     ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟', '▘', '▚', '▌', '▙', '▀', '▜', '▛', '█',
 ];
 
-
 fn neighbors(i: usize, width: usize, height: usize) -> impl Iterator<Item = usize> {
     let (x, y) = (i % width, i / width);
     // Backward steps are lazy: they underflow at the edge they guard.
@@ -328,7 +323,6 @@ impl Animation {
         })
     }
 
-
     pub fn load(dir: Option<&Path>, name: &str) -> io::Result<Self> {
         if let Some(dir) = dir {
             let path = dir.join(name);
@@ -353,7 +347,6 @@ impl Animation {
             format!("no animation named {name:?} ({where_}); try --list"),
         ))
     }
-
 
     pub fn fit(&self, max_w: usize, max_h: usize) -> (usize, usize) {
         let by_width = max_w as f32 / self.width as f32;
