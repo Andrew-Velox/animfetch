@@ -70,7 +70,7 @@ pub fn rows<'a>(items: &'a [Item], cfg: &Config) -> Vec<Row<'a>> {
     }
 
     // Swatches, if asked for, sit under the box like any other raw row.
-    if cfg.color {
+    if cfg.swatches() {
         rows.extend(
             items
                 .iter()

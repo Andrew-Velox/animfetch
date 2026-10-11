@@ -241,6 +241,12 @@ gap = 4
 # terminal or NO_COLOR is set.
 color = true
 
+# Draw in shades of grey: colour is sent, with no hue in it, so the light and
+# dark of the art and the text stay. The same as --no-color; --def-color puts
+# the default colours back. `color = false` is the other way to have no colour:
+# no colour codes at all, so the terminal's own.
+gray = false
+
 # Rows in the info pane, in order. Leave this out to get the rows that suit
 # `info_style`; set it and your list wins, whichever style is chosen.
 # Available: os, host, kernel, uptime, packages, shell, shell_path, wm,

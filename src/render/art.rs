@@ -30,7 +30,7 @@ pub fn paint_art_row(
     let t = ((y + offset) % span) as f32 / span as f32;
 
     if let Some(color) = cfg.gradient.sample(t) {
-        color.fg(out);
+        cfg.tone(color).fg(out);
         out.push_str(row);
         out.push_str(RESET);
     } else {

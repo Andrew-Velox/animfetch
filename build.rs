@@ -54,8 +54,9 @@ fn main() {
 /// Generates the `BORDERS` table from `assets/border/`.
 ///
 /// Loose PNGs are left borders; `left_border/` and `bottom_border/` say so
-/// outright, and win on a name clash. Anything that is not a PNG is left out
-/// with a warning, since the decoder reads PNGs and nothing else.
+/// outright, and win on a name clash. `down_border/` is the same folder as
+/// `bottom_border/` under the name the `--db` flag uses. Anything that is not a
+/// PNG is left out with a warning, since the decoder reads PNGs and nothing else.
 fn borders() {
     use std::collections::BTreeMap;
 
@@ -68,6 +69,7 @@ fn borders() {
         scan(root, "left", &mut found);
         scan(&root.join("left_border"), "left", &mut found);
         scan(&root.join("bottom_border"), "bottom", &mut found);
+        scan(&root.join("down_border"), "bottom", &mut found);
     }
 
     let mut out = String::from(

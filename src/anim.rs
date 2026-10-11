@@ -307,6 +307,15 @@ pub struct Animation {
 }
 
 impl Animation {
+    /// Take the colour out of every frame, once, rather than on every paint.
+    pub fn grayscale(&mut self) {
+        for frame in &mut self.frames {
+            for (_, rgb) in &mut frame.art {
+                *rgb = rgb.map(Rgb::gray);
+            }
+        }
+    }
+
     fn from_texts(texts: impl IntoIterator<Item = String>) -> Option<Self> {
         let frames: Vec<Frame> = texts.into_iter().map(|t| Frame::parse(&t)).collect();
         if frames.is_empty() {
@@ -786,5 +795,28 @@ mod tests {
         };
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
         assert!(err.to_string().contains(missing), "{err}");
+    }
+
+    #[test]
+    fn grayscale_takes_the_hue_out_of_every_cell_and_keeps_the_rest() {
+        let mut anim = Animation::from_texts([
+            "\x1b[38;2;255;0;0m#\x1b[0m.\n".to_string(),
+            "\x1b[38;2;0;200;90m#\x1b[0m.\n".to_string(),
+        ])
+        .unwrap();
+        let before: Vec<char> = anim.frames[0].art.iter().map(|(c, _)| *c).collect();
+
+        anim.grayscale();
+
+        for frame in &anim.frames {
+            for (_, rgb) in &frame.art {
+                if let Some(Rgb(r, g, b)) = rgb {
+                    assert!(r == g && g == b, "{rgb:?} kept its hue");
+                }
+            }
+            assert!(frame.art.iter().any(|(_, rgb)| rgb.is_some()), "lost the colour cells");
+        }
+        let after: Vec<char> = anim.frames[0].art.iter().map(|(c, _)| *c).collect();
+        assert_eq!(before, after);
     }
 }

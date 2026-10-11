@@ -2,6 +2,16 @@
 
 use std::fmt::Write as _;
 use std::io::{self, Write};
+use std::time::{Duration, Instant};
+
+/// How long the pictures are left alone before they are sent again.
+///
+/// A program that clears the screen, `clear` being the usual one, takes every
+/// picture with it, and the terminal frees their data as well as their
+/// placement. Nothing tells a background process that happened, so the
+/// pictures are simply sent again now and then. About 55 KB, which a terminal
+/// decodes without a visible cost, inside the frame's own synchronised write.
+const PICTURE_REFRESH: Duration = Duration::from_secs(1);
 
 /// Incremental painter for the pinned pane. Rewrites only changed lines and
 /// leaves the cursor where it found it, since the user is typing below.
@@ -14,10 +24,15 @@ pub struct Pane {
     /// Origin mode makes rows relative to the scroll region, which would put
     /// the art inside it. When set, each frame turns it off and back on.
     origin_mode: bool,
-    /// Escapes that put the border pictures on screen. Sent whenever the whole
-    /// pane is repainted, since a repaint may have followed a program that
-    /// cleared the screen.
+    /// Escapes that put the border pictures on screen: the pictures
+    /// themselves, then where they go. Sent whenever the whole pane is
+    /// repainted, since a repaint may have followed a program that cleared the
+    /// screen, and again every `refresh` for the same reason.
     overlay: String,
+    /// When the overlay last went out.
+    overlay_sent: Option<Instant>,
+    /// How long the overlay is left before it goes out again.
+    refresh: Duration,
 }
 
 /// Save/restore cursor position and attributes (DECSC/DECRC).
@@ -36,6 +51,8 @@ impl Pane {
             painted_h: 0,
             origin_mode: false,
             overlay: String::new(),
+            overlay_sent: None,
+            refresh: PICTURE_REFRESH,
         }
     }
 
@@ -46,11 +63,18 @@ impl Pane {
         self
     }
 
-    /// The escapes that place the border pictures, sent with each full
-    /// repaint. Empty for none.
+    /// The escapes that send and place the border pictures, sent with each
+    /// full repaint and then every so often. Empty for none.
     pub fn set_overlay(&mut self, overlay: String) {
         self.overlay = overlay;
         self.needs_clear = true;
+    }
+
+    /// Send the pictures again after this long without a full repaint.
+    #[cfg(test)]
+    fn with_picture_refresh(mut self, every: Duration) -> Self {
+        self.refresh = every;
+        self
     }
 
     pub fn has_overlay(&self) -> bool {
@@ -107,8 +131,10 @@ impl Pane {
             let _ = write!(buf, "\x1b[{};1H\x1b[2K", y + 1);
         }
 
-        if full {
+        let stale = self.overlay_sent.is_none_or(|at| at.elapsed() >= self.refresh);
+        if !self.overlay.is_empty() && (full || stale) {
             buf.push_str(&self.overlay);
+            self.overlay_sent = Some(Instant::now());
         }
 
         if self.origin_mode {
@@ -151,6 +177,46 @@ mod tests {
         buf.clear();
         pane.paint(&mut buf, &["a".into()], 4).unwrap();
         assert!(String::from_utf8(buf).unwrap().contains("<PLACE>"));
+    }
+
+    #[test]
+    fn the_pictures_are_sent_again_after_a_while_without_repainting_the_rows() {
+        // `clear` frees them in the terminal and nothing says it happened.
+        let mut pane = Pane::new().with_picture_refresh(Duration::ZERO);
+        pane.set_overlay("<PLACE>".to_string());
+        let mut buf = Vec::new();
+        pane.paint(&mut buf, &["a".into()], 4).unwrap();
+
+        buf.clear();
+        pane.paint(&mut buf, &["a".into()], 4).unwrap();
+        let written = String::from_utf8(buf).unwrap();
+        assert!(written.contains("<PLACE>"), "{written:?}");
+        // Only the pictures: the rows are not wiped and drawn again.
+        assert!(!written.contains("\x1b[2K"), "{written:?}");
+    }
+
+    #[test]
+    fn nothing_is_sent_again_while_the_refresh_is_not_due() {
+        let mut pane = Pane::new().with_picture_refresh(Duration::from_secs(3600));
+        pane.set_overlay("<PLACE>".to_string());
+        let mut buf = Vec::new();
+        pane.paint(&mut buf, &["a".into()], 4).unwrap();
+
+        for _ in 0..3 {
+            buf.clear();
+            pane.paint(&mut buf, &["a".into()], 4).unwrap();
+            assert!(!String::from_utf8(buf.clone()).unwrap().contains("<PLACE>"));
+        }
+    }
+
+    #[test]
+    fn a_pane_with_no_pictures_never_sends_any() {
+        let mut pane = Pane::new().with_picture_refresh(Duration::ZERO);
+        let mut buf = Vec::new();
+        for _ in 0..2 {
+            pane.paint(&mut buf, &["a".into()], 4).unwrap();
+        }
+        assert!(!String::from_utf8(buf).unwrap().contains("\x1b_G"));
     }
 
     #[test]

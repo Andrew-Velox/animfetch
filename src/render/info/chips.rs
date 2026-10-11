@@ -168,7 +168,7 @@ pub fn rows<'a>(items: &'a [Item], cfg: &Config) -> Vec<Row<'a>> {
         rows.extend(body);
     }
 
-    if cfg.color && items.iter().any(is_swatch) {
+    if cfg.swatches() && items.iter().any(is_swatch) {
         if !rows.is_empty() {
             rows.push(Row::Blank);
         }

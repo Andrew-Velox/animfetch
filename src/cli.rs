@@ -34,6 +34,10 @@ pub struct Args {
     pub save: bool,
     pub once: bool,
     pub no_color: bool,
+    pub def_color: bool,
+    /// The command line was `--pin` and nothing else, which is what a shell's
+    /// startup file runs.
+    pub bare_pin: bool,
     pub palette: bool,
     pub live: bool,
 }
@@ -70,8 +74,11 @@ impl Args {
     pub fn parse_from(argv: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         let mut args = Args::default();
         let mut argv = argv.into_iter();
+        // Options, not the words that follow them.
+        let mut options = 0usize;
 
         while let Some(arg) = argv.next() {
+            options += 1;
             let argv: Argv<'_> = &mut argv;
             match arg.as_str() {
                 "-h" | "--help" => return Ok(Parsed::Help),
@@ -83,16 +90,17 @@ impl Args {
                 "-l" | "--list" => args.list = true,
                 "--save" => args.save = true,
                 "--no-color" => args.no_color = true,
+                "--def-color" => args.def_color = true,
                 "--palette" => args.palette = true,
                 "--live" => args.live = true,
                 "--no-border" => args.no_border = true,
                 "--no-art" => args.no_art = true,
                 "--list-borders" => args.list_borders = true,
-                "--border-left" => {
-                    args.border_left = Some(value(argv, "--border-left", "a name or a path")?);
+                "--lb" | "--border-left" => {
+                    args.border_left = Some(value(argv, &arg, "a name or a path")?);
                 }
-                "--border-bottom" => {
-                    args.border_bottom = Some(value(argv, "--border-bottom", "a name or a path")?);
+                "--db" | "--border-bottom" => {
+                    args.border_bottom = Some(value(argv, &arg, "a name or a path")?);
                 }
                 "--border-bottom-lift" => {
                     args.border_bottom_lift =
@@ -131,7 +139,25 @@ impl Args {
             }
         }
 
+        args.bare_pin = args.pin && options == 1;
         Ok(Parsed::Run(args))
+    }
+
+    /// What happens to a pin already on this terminal. A bare `--pin` is the
+    /// startup file's, which is no reason to disturb it. A run that saves is
+    /// writing for the terminals still to be opened: it leaves this one as it
+    /// was, and says so. One with settings of its own that does not save is the
+    /// run to look at, and takes the terminal over.
+    pub fn existing_pin(&self) -> crate::pin::Existing {
+        use crate::pin::Existing;
+
+        if self.save {
+            Existing::KeepAndSay
+        } else if self.bare_pin {
+            Existing::Keep
+        } else {
+            Existing::Replace
+        }
     }
 
     /// Lay these overrides over the config.
@@ -160,8 +186,16 @@ impl Args {
         if let Some(v) = self.seconds {
             cfg.play_seconds = v;
         }
+        // Each of the two decides both settings, so a config left the other
+        // way cannot turn `--no-color` into colour or `--def-color` into grey.
+        // Grey is the plainer, so it wins when both are asked for.
+        if self.def_color {
+            cfg.color = true;
+            cfg.gray = false;
+        }
         if self.no_color {
-            cfg.color = false;
+            cfg.color = true;
+            cfg.gray = true;
         }
         if self.palette {
             cfg.color_source = ColorSource::Palette;
@@ -209,6 +243,15 @@ impl Args {
         }
         if let Some(v) = self.info_style {
             out.push(("info_style", format!("{:?}", v.word())));
+        }
+        // The plainer of the two, as `apply` takes it. Both keys, so that the
+        // file never holds a pair that disagrees with the one just chosen.
+        if self.no_color {
+            out.push(("color", "true".to_string()));
+            out.push(("gray", "true".to_string()));
+        } else if self.def_color {
+            out.push(("color", "true".to_string()));
+            out.push(("gray", "false".to_string()));
         }
         if self.no_art {
             out.push(("art", "false".to_string()));
@@ -279,9 +322,11 @@ Options:
                           (matugen, pywal, wallust) instead of the config
       --live              Keep uptime, memory, swap and disk current while
                           pinned or interactive (interval: live_interval)
-      --border-left <B>   An ornament down the left edge: the name of a built-in
+      --lb, --border-left <B>
+                          An ornament down the left edge: the name of a built-in
                           or your own image (see --list-borders), or a PNG path
-      --border-bottom <B> An ornament along the bottom; the image is upright and
+      --db, --border-bottom <B>
+                          An ornament along the bottom; the image is upright and
                           is turned a quarter clockwise
       --border-render <M> auto (pictures where the terminal can show them,
                           else no border), image (force pictures), or cells
@@ -295,7 +340,8 @@ Options:
       --no-border         Draw no border this run, whatever the config says
       --no-art            Draw no animation: the info is the whole pane
       --list-borders      List the available border images
-      --no-color          Disable colour output
+      --no-color          Draw everything in shades of grey, no colour at all
+      --def-color         The default colours, from your theme: undoes --no-color
   -h, --help              Show this help
   -V, --version           Show the version
 
@@ -389,6 +435,86 @@ mod tests {
     }
 
     #[test]
+    fn only_a_line_of_nothing_but_pin_is_a_bare_pin() {
+        assert!(run(&["--pin"]).bare_pin);
+        assert!(!run(&["--pin", "--no-color"]).bare_pin);
+        assert!(!run(&["--no-color", "--pin"]).bare_pin);
+        assert!(!run(&["--pin", "-a", "tree"]).bare_pin);
+        assert!(!run(&["--no-color"]).bare_pin);
+        assert!(!run(&[]).bare_pin);
+    }
+
+    #[test]
+    fn a_pin_already_there_is_kept_for_a_bare_pin_and_for_a_save() {
+        use crate::pin::Existing;
+
+        assert_eq!(run(&["--pin"]).existing_pin(), Existing::Keep);
+        // A save says so, since that terminal looks as if nothing happened.
+        assert_eq!(
+            run(&["--pin", "--no-color", "--save"]).existing_pin(),
+            Existing::KeepAndSay
+        );
+        assert_eq!(
+            run(&["--save", "--pin", "--info", "card"]).existing_pin(),
+            Existing::KeepAndSay
+        );
+
+        // Settings given to look at now take the terminal over.
+        assert_eq!(
+            run(&["--pin", "--no-color"]).existing_pin(),
+            Existing::Replace
+        );
+        assert_eq!(
+            run(&["--pin", "-a", "tree", "--live"]).existing_pin(),
+            Existing::Replace
+        );
+    }
+
+    #[test]
+    fn each_colour_flag_wins_over_what_the_config_had_the_other_way() {
+        // The states a config is left in by saving one and then the other, and
+        // by `color = false`, which is no colour codes at all.
+        for (color, gray) in [(false, false), (true, false)] {
+            let mut cfg = Config {
+                color,
+                gray,
+                ..Config::default()
+            };
+            run(&["--no-color"]).apply(&mut cfg);
+            assert!(cfg.color && cfg.gray, "grey came out otherwise: {color} {gray}");
+        }
+
+        for (color, gray) in [(false, false), (true, true)] {
+            let mut cfg = Config {
+                color,
+                gray,
+                ..Config::default()
+            };
+            run(&["--def-color"]).apply(&mut cfg);
+            assert!(cfg.color && !cfg.gray, "colour came out otherwise: {color} {gray}");
+        }
+    }
+
+    #[test]
+    fn no_color_is_grey_and_def_color_is_the_default_colours() {
+        let mut grey = Config::default();
+        run(&["--no-color"]).apply(&mut grey);
+        // Still coloured on the wire, with no hue in it.
+        assert!(grey.gray && grey.color);
+
+        let mut def = Config::default();
+        run(&["--def-color"]).apply(&mut def);
+        assert!(def.color && !def.gray);
+
+        // Grey is the plainer, so it wins, whichever order they come in.
+        for args in [["--no-color", "--def-color"], ["--def-color", "--no-color"]] {
+            let mut both = Config::default();
+            run(&args).apply(&mut both);
+            assert!(both.color && both.gray, "{args:?}");
+        }
+    }
+
+    #[test]
     fn overrides_are_laid_over_the_config_and_only_those() {
         let mut cfg = Config::default();
         let before = (cfg.fps, cfg.width, cfg.style);
@@ -396,7 +522,7 @@ mod tests {
         run(&["--info", "tree", "--live", "--no-color"]).apply(&mut cfg);
 
         assert_eq!(cfg.info_style, InfoStyle::Tree);
-        assert!(cfg.live && !cfg.color);
+        assert!(cfg.live && cfg.gray && cfg.color);
         assert_eq!(
             (cfg.fps, cfg.width, cfg.style),
             before,
@@ -419,6 +545,19 @@ mod tests {
                 ("height", "9".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn the_short_border_flags_are_the_long_ones() {
+        let short = run(&["--lb", "03", "--db", "~/x.png"]);
+        let long = run(&["--border-left", "03", "--border-bottom", "~/x.png"]);
+        assert_eq!(short.border_left, long.border_left);
+        assert_eq!(short.border_bottom, long.border_bottom);
+        assert_eq!(short.saved(), long.saved());
+
+        // The error names the flag the way it was typed.
+        assert_eq!(err(&["--lb"]), "--lb needs a name or a path");
+        assert_eq!(err(&["--db"]), "--db needs a name or a path");
     }
 
     #[test]
@@ -492,6 +631,30 @@ mod tests {
     }
 
     #[test]
+    fn the_colour_choices_can_be_saved_and_read_back() {
+        let grey = run(&["--no-color"]).saved();
+        assert_eq!(
+            grey,
+            [("color", "true".to_string()), ("gray", "true".to_string())]
+        );
+
+        let def = run(&["--def-color"]).saved();
+        assert_eq!(
+            def,
+            [("color", "true".to_string()), ("gray", "false".to_string())]
+        );
+
+        // Both is the plainer, as it is when the run is applied.
+        let both = run(&["--no-color", "--def-color"]).saved();
+        assert_eq!(both, grey);
+
+        for saved in [grey, def] {
+            let text: String = saved.iter().map(|(k, v)| format!("{k} = {v}\n")).collect();
+            toml::from_str::<Config>(&text).unwrap();
+        }
+    }
+
+    #[test]
     fn saving_nothing_is_an_empty_list() {
         assert!(run(&["--save", "--pin", "--live"]).saved().is_empty());
     }
@@ -535,6 +698,7 @@ mod tests {
             "--live",
             "--palette",
             "--no-color",
+            "--def-color",
             "--animation",
             "--fps",
             "--width",
@@ -544,7 +708,9 @@ mod tests {
             "--art-color",
             "--info",
             "--border-left",
+            "--lb",
             "--border-bottom",
+            "--db",
             "--border-render",
             "--border-bottom-lift",
             "--border-bottom-shift",

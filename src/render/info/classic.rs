@@ -30,7 +30,7 @@ pub fn rows<'a>(title: &'a str, items: &'a [Item], cfg: &Config) -> Vec<Row<'a>>
                 label: item.name(),
                 value: &item.value,
             });
-        } else if cfg.color {
+        } else if cfg.swatches() {
             rows.push(Row::Raw(&item.value));
         }
     }
