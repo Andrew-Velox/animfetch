@@ -29,6 +29,8 @@ pub fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
     let (cols, mut rows) = term::size();
     let mut layout = Layout::pinned(fetch, cols, rows);
     let mut split = enter_split(&mut stdout, &layout, cfg, rows)?;
+    // After the split, which clears the screen and so any picture on it.
+    layout.show_borders(&mut stdout, &mut pane)?;
 
     let interval = cfg.frame_interval();
     let mut next_frame = Instant::now() + interval;
@@ -87,6 +89,7 @@ pub fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
                     rows = h;
                     layout = Layout::pinned(fetch, w, h);
                     split = enter_split(&mut stdout, &layout, cfg, h)?;
+                    layout.show_borders(&mut stdout, &mut pane)?;
                     pane.invalidate();
                     prompt_dirty = true;
                 }
@@ -105,6 +108,12 @@ pub fn shell_loop(fetch: &Fetch<'_>) -> io::Result<u8> {
         if next_frame < now {
             next_frame = now + interval;
         }
+    }
+
+    if pane.has_overlay() {
+        let mut gone = String::new();
+        crate::border::clear(&mut gone);
+        write!(stdout, "{gone}")?;
     }
 
     guard.restore();
@@ -206,6 +215,9 @@ pub fn play(fetch: &Fetch<'_>) -> io::Result<()> {
         term::HIDE_CURSOR
     )?;
 
+    // The rows are reserved and the cursor is at the top of them.
+    layout.print_borders(&mut stdout)?;
+
     let result = animate_in_place(&mut stdout, &layout, cfg, height);
 
     // Step below the art so the shell prompt lands after it.
@@ -260,6 +272,15 @@ pub fn draw_once(fetch: &Fetch<'_>) -> io::Result<()> {
     let lines = render::compose(&layout.scene(0), fetch.cfg);
 
     let mut out = io::stdout().lock();
+
+    // Pictures are placed relative to the cursor, so the rows they will cover
+    // are made first, as `play` does: otherwise a pane at the bottom of the
+    // screen would scroll away from the picture drawn at its top.
+    if layout.has_pictures() {
+        write!(out, "{}\x1b[{}A", "\n".repeat(lines.len()), lines.len())?;
+        layout.print_borders(&mut out)?;
+    }
+
     for line in &lines {
         writeln!(out, "{line}")?;
     }

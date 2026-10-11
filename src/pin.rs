@@ -78,6 +78,11 @@ pub fn start(fetch: &Fetch<'_>) -> io::Result<()> {
     let result = animate(fetch, shell_pgid, shell_pid);
     let _ = std::fs::remove_file(pid_path()?);
 
+    // Pictures outlive the scroll region unless they are taken away.
+    let mut gone = String::new();
+    crate::border::clear_if_supported(&mut gone);
+    let _ = write!(io::stdout(), "{gone}");
+
     // Usually already gone by here, so best effort.
     let _ = write!(
         io::stdout(),
@@ -100,9 +105,11 @@ pub fn stop() -> io::Result<bool> {
     let _ = std::fs::remove_file(pid_path()?);
 
     let mut stdout = io::stdout();
+    let mut gone = String::new();
+    crate::border::clear_if_supported(&mut gone);
     write!(
         stdout,
-        "{}{}{}",
+        "{gone}{}{}{}",
         term::RESET_ORIGIN_MODE,
         term::RESET_SCROLL_REGION,
         term::CLEAR_SCREEN
@@ -127,6 +134,7 @@ fn animate(fetch: &Fetch<'_>, shell_pgid: libc::pid_t, shell_pid: libc::pid_t) -
     let (mut cols, mut rows) = term::size();
     let mut layout = Layout::pinned(fetch, cols, rows);
     let mut split = Split::fit(&layout, cfg, rows);
+    layout.show_borders(&mut stdout, &mut pane)?;
 
     let interval = cfg.frame_interval();
     let mut phase = 0usize;
@@ -157,6 +165,7 @@ fn animate(fetch: &Fetch<'_>, shell_pgid: libc::pid_t, shell_pid: libc::pid_t) -
             (cols, rows) = (w, h);
             layout = Layout::pinned(fetch, cols, rows);
             split = Split::fit(&layout, cfg, rows);
+            layout.show_borders(&mut stdout, &mut pane)?;
 
             if let Some(s) = &split {
                 reassert_region(&mut stdout, s.scroll_top, rows)?;

@@ -95,11 +95,24 @@ fn kernel_detail(sysname: &str, release: &str) -> String {
 /// environment. Only trusted when the name came from the same place; a name
 /// found by walking the process tree belongs to a program that may not set it.
 fn terminal_detail(name: &str) -> Option<String> {
-    if env("TERM_PROGRAM").as_deref() != Some(name) {
-        return None;
+    if env("TERM_PROGRAM").as_deref() == Some(name) {
+        return Some(format!("{name} {}", env("TERM_PROGRAM_VERSION")?));
     }
-    Some(format!("{name} {}", env("TERM_PROGRAM_VERSION")?))
+
+    // Found by walking up the process tree, so there is no environment to read
+    // a version from. Some of these will say it when asked.
+    if SELF_REPORTING.contains(&name) {
+        let out = run_capture(name, &["--version"])?;
+        return Some(format!("{name} {}", parse_version(&out)?));
+    }
+    None
 }
+
+/// Terminals that print their version for `--version` and put none in the
+/// environment. A list and not "whatever was found": what gets run is a
+/// program named by a walk up the process tree, so it is only ever one of
+/// these.
+const SELF_REPORTING: &[&str] = &["kitty", "alacritty", "foot"];
 
 /// `zsh 5.9`, by asking the shell. Only a name `is_shell` vouches for is run,
 /// so `$SHELL` pointing at something unexpected is never executed.
@@ -314,6 +327,31 @@ mod tests {
         // A parenthesis that is part of the name stays.
         assert_eq!(cpu_model("Intel(R) Core(TM) i7"), "Intel(R) Core(TM) i7");
         assert_eq!(cpu_model("Foo (rev B) (4)"), "Foo (rev B)");
+    }
+
+    #[test]
+    fn an_unknown_terminal_is_never_run_to_ask_its_version() {
+        // Nothing on the list and nothing in the environment: no subprocess,
+        // and so no way for a name from the process tree to be executed.
+        assert_eq!(terminal_detail("definitely-not-a-terminal"), None);
+        assert!(!SELF_REPORTING.contains(&"definitely-not-a-terminal"));
+    }
+
+    #[test]
+    fn the_terminals_asked_for_a_version_are_the_ones_known_to_answer() {
+        for name in ["kitty", "alacritty", "foot"] {
+            assert!(SELF_REPORTING.contains(&name), "{name}");
+        }
+        // Their answers, as they are printed, give a version.
+        assert_eq!(
+            parse_version("kitty 0.48.2 created by Kovid Goyal").as_deref(),
+            Some("0.48.2")
+        );
+        assert_eq!(parse_version("alacritty 0.13.2").as_deref(), Some("0.13.2"));
+        assert_eq!(
+            parse_version("foot version: 1.16.2 +pgo +ime").as_deref(),
+            Some("1.16.2")
+        );
     }
 
     #[test]

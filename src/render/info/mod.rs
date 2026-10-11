@@ -1,4 +1,4 @@
-//! The info pane, in seven styles.
+//! The info pane, in eight styles.
 //!
 //! A style is a handful of row types. Each row is measured and painted by one
 //! type, side by side, so the width the art is fitted to cannot drift from what
@@ -13,6 +13,7 @@ mod chips;
 mod classic;
 mod group;
 mod iconic;
+mod minimal;
 mod sections;
 mod tree;
 mod value;
@@ -71,6 +72,8 @@ pub fn build<'a>(title: &'a str, items: &'a [Item], cfg: &Config) -> Box<dyn Inf
         InfoStyle::Iconic => Box::new(Rows(iconic::rows(title, items, cfg))),
         // A list in `modules` order, with no row for `user@host`.
         InfoStyle::Card => Box::new(Rows(card::rows(items, cfg))),
+        // An icon and a value per row, in the order of `modules`.
+        InfoStyle::Minimal => Box::new(Rows(minimal::rows(items, cfg))),
     }
 }
 

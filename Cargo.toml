@@ -18,6 +18,18 @@ libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 toml = "0.9"
 unicode-width = "0.2"
+# Reads the border images: palette and transparency decoding, nothing else.
+png = { version = "0.17", default-features = false }
+# Already here for png. Compresses the pictures sent to the terminal, which
+# are mostly empty and would otherwise be a quarter of a megabyte per draw.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[features]
+default = ["bundled-borders"]
+# The border images under assets/border, built into the binary. They are about
+# 950 KiB, a seventh of it. Without them borders still work from your own files
+# (`<config>/border/`) and from paths; only the built-in names are gone.
+bundled-borders = []
 
 [profile.release]
 opt-level = 3

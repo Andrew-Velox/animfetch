@@ -33,6 +33,7 @@ pub fn scene<'a>(
         items,
         phase: 0,
         width,
+        border: None,
     }
 }
 

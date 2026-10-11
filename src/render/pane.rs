@@ -14,6 +14,10 @@ pub struct Pane {
     /// Origin mode makes rows relative to the scroll region, which would put
     /// the art inside it. When set, each frame turns it off and back on.
     origin_mode: bool,
+    /// Escapes that put the border pictures on screen. Sent whenever the whole
+    /// pane is repainted, since a repaint may have followed a program that
+    /// cleared the screen.
+    overlay: String,
 }
 
 /// Save/restore cursor position and attributes (DECSC/DECRC).
@@ -31,6 +35,7 @@ impl Pane {
             needs_clear: true,
             painted_h: 0,
             origin_mode: false,
+            overlay: String::new(),
         }
     }
 
@@ -39,6 +44,17 @@ impl Pane {
     pub fn with_origin_mode(mut self) -> Self {
         self.origin_mode = true;
         self
+    }
+
+    /// The escapes that place the border pictures, sent with each full
+    /// repaint. Empty for none.
+    pub fn set_overlay(&mut self, overlay: String) {
+        self.overlay = overlay;
+        self.needs_clear = true;
+    }
+
+    pub fn has_overlay(&self) -> bool {
+        !self.overlay.is_empty()
     }
 
     /// Force a full repaint, after a resize or a child that drew over us.
@@ -55,6 +71,7 @@ impl Pane {
         height: usize,
     ) -> io::Result<()> {
         let visible = lines.len().min(height);
+        let full = self.needs_clear;
         let mut buf = String::with_capacity(visible * 96);
 
         buf.push_str(BEGIN_SYNC);
@@ -90,6 +107,10 @@ impl Pane {
             let _ = write!(buf, "\x1b[{};1H\x1b[2K", y + 1);
         }
 
+        if full {
+            buf.push_str(&self.overlay);
+        }
+
         if self.origin_mode {
             buf.push_str(crate::term::SET_ORIGIN_MODE);
         }
@@ -108,6 +129,48 @@ impl Pane {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pictures_are_placed_on_a_full_repaint_and_not_on_every_frame() {
+        let mut pane = Pane::new();
+        pane.set_overlay("<PLACE>".to_string());
+        let mut buf = Vec::new();
+
+        pane.paint(&mut buf, &["a".into()], 4).unwrap();
+        assert!(String::from_utf8(buf.clone()).unwrap().contains("<PLACE>"));
+
+        buf.clear();
+        pane.paint(&mut buf, &["a".into()], 4).unwrap();
+        assert!(
+            !String::from_utf8(buf.clone()).unwrap().contains("<PLACE>"),
+            "resent"
+        );
+
+        // After something drew over us they are placed again.
+        pane.invalidate();
+        buf.clear();
+        pane.paint(&mut buf, &["a".into()], 4).unwrap();
+        assert!(String::from_utf8(buf).unwrap().contains("<PLACE>"));
+    }
+
+    #[test]
+    fn the_pictures_go_inside_the_bracket_that_restores_the_cursor() {
+        let mut pane = Pane::new().with_origin_mode();
+        pane.set_overlay("<PLACE>".to_string());
+        let mut buf = Vec::new();
+        pane.paint(&mut buf, &["a".into()], 4).unwrap();
+
+        let out = String::from_utf8(buf).unwrap();
+        let place = out.find("<PLACE>").unwrap();
+        assert!(
+            place < out.rfind("\x1b8").unwrap(),
+            "after the restore: {out:?}"
+        );
+        assert!(
+            place > out.find("\x1b[?6l").unwrap(),
+            "before origin mode is off"
+        );
+    }
 
     #[test]
     fn paint_leaves_the_cursor_where_it_found_it() {

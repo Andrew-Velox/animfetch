@@ -23,6 +23,10 @@ fps = 12.0
 width = 56
 height = 20
 
+# Draw the animation. Set false for the info alone (and any border), which is
+# how the `minimal` style looks beside an ornament. `--no-art` for one run.
+art = true
+
 # How long `animfetch --play` animates before handing back to your shell.
 play_seconds = 3.0
 
@@ -203,7 +207,22 @@ palette_gradient = ["primary", "secondary", "tertiary"]
 #              (`/` is `Root`, `/mnt/Jogos` is `Jogos`). Values are short and
 #              bare, in a single colour: your `value`.
 #
-# `boxed`, `tree` and `sections` also read fuller values: the kernel's name,
+#   "minimal"  an icon and a value per row and nothing else: no title, no
+#              labels, no frame, one colour. The plain list that sits beside a
+#              border ornament:
+#
+#                 Arch Linux x86_64
+#                 Linux 7.2.6-arch2-1
+#                 mango (Wayland)
+#                 zsh 5.9.2
+#
+#              Rows go in the order of `modules`, so it is a list you shape.
+#              Values are the fuller ones (versions, the session), since with
+#              no labels the value has to say what it is. To match the
+#              reference look, turn the animation off (`art = false`) and add
+#              a border (`border_left`, `border_bottom`).
+#
+# `boxed`, `tree`, `sections` and `minimal` also read fuller values: the kernel's name,
 # and the terminal's, shell's and window manager's versions. Versions of the
 # shell and window manager come from running them, which costs a few
 # milliseconds that `classic` never spends. `chips`, `iconic` and `card` read
@@ -249,6 +268,9 @@ color = true
 #   modules = ["host", "cpu", "gpu", "memory", "disks", "os", "kernel",
 #              "packages", "shell", "wm", "os_age", "uptime", "battery",
 #              "colors"]
+# minimal default:
+#   modules = ["os", "kernel", "wm", "shell", "terminal", "cpu", "gpu",
+#              "memory", "os_age"]
 # card default:
 #   modules = ["os", "kernel", "uptime", "shell", "wm", "os_age", "memory",
 #              "cpu", "disks", "packages", "custom"]
@@ -259,6 +281,47 @@ color = true
 # chips default:
 #   modules = ["os", "kernel", "uptime", "packages", "wm", "shell",
 #              "terminal", "font", "cpu", "gpu", "memory", "disk", "colors"]
+
+# An ornament drawn down the left of the data (between the art and the info),
+# and another along the bottom of it: PNG line art, drawn as the picture it is
+# in a terminal that speaks the kitty graphics protocol (kitty, WezTerm,
+# Ghostty). Other terminals, VS Code's included, get no border.
+#
+# Each is the name of a built-in image (`animfetch --list-borders` shows them),
+# of one of your own, or a path to a PNG. Your own go in
+# `~/.config/animfetch/border/left_border/` and `.../bottom_border/`, and shadow
+# a built-in of the same name. Empty means none.
+#
+# The art and the info give up the room a border takes. It is skipped on a
+# terminal under 60 columns, and with no colour (a pipe, NO_COLOR).
+#
+# A bottom image is stored upright, hilt at the top, and is turned a quarter
+# clockwise so it lies along the bottom with the hilt at the right.
+#
+# border_left   = "00"
+# border_bottom = "03"
+
+# How borders are drawn:
+#   "auto"   the pictures, where the terminal can show them, else no border
+#   "image"  the pictures, even where they are not detected
+#   "cells"  the image redrawn as braille characters: coarse, but it works in
+#            any terminal with colour. Never chosen for you.
+#
+# border_render = "auto"
+
+# How far to raise the bottom ornament toward the info, in rows. May be a
+# fraction: 0.5 is half a row. 0 puts it flush under the last row, and values
+# are capped at 3. Only pictures can be raised by part of a row; cells cannot.
+#
+# border_bottom_lift = 2.15
+
+# How far to move the bottom ornament to the right, in columns. May be a
+# fraction: 0.5 is half a column. 0 starts it flush with the left border, and
+# values are capped at 24. The picture is narrowed by as much as it is moved, so
+# it never runs past the edge of the terminal. Only pictures move by part of a
+# column; cells move by whole ones.
+#
+# border_bottom_shift = 12.0
 
 # Rows of your own text. They are placed wherever `custom` stands in `modules`,
 # so `modules = ["os", "custom", "kernel"]` puts them between the two. Only the

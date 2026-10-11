@@ -121,6 +121,10 @@ pub fn size() -> (u16, u16) {
 
 /// `(columns, rows)` for a file descriptor, or `None` if it is not a terminal.
 fn winsize(fd: RawFd) -> Option<(u16, u16)> {
+    raw_winsize(fd).map(|ws| (ws.ws_col, ws.ws_row))
+}
+
+fn raw_winsize(fd: RawFd) -> Option<libc::winsize> {
     let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
 
     // SAFETY: TIOCGWINSZ only writes a `winsize`, which is what `ws` is.
@@ -129,5 +133,18 @@ fn winsize(fd: RawFd) -> Option<(u16, u16)> {
     }
 
     // Zero is unusable, so treat it as no terminal at all.
-    (ws.ws_col > 0 && ws.ws_row > 0).then_some((ws.ws_col, ws.ws_row))
+    (ws.ws_col > 0 && ws.ws_row > 0).then_some(ws)
+}
+
+/// How many pixels one character cell is, if the terminal says. Many do not:
+/// the fields are zero, and a pty in a test never fills them.
+pub fn cell_pixels() -> Option<(usize, usize)> {
+    let fds = [libc::STDOUT_FILENO, libc::STDERR_FILENO, libc::STDIN_FILENO];
+    let ws = fds.into_iter().find_map(raw_winsize)?;
+
+    let (w, h) = (
+        usize::from(ws.ws_xpixel) / usize::from(ws.ws_col),
+        usize::from(ws.ws_ypixel) / usize::from(ws.ws_row),
+    );
+    (w > 0 && h > 0).then_some((w, h))
 }

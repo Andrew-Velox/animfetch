@@ -5,7 +5,7 @@
 
 use std::str::FromStr;
 
-use crate::config::{ArtColor, Choice, ColorSource, Config, InfoStyle, Style};
+use crate::config::{ArtColor, BorderRender, Choice, ColorSource, Config, InfoStyle, Style};
 
 /// What was asked for. Every setting is optional: unset means the config's.
 #[derive(Default)]
@@ -19,6 +19,14 @@ pub struct Args {
     pub height: Option<usize>,
     pub seconds: Option<f32>,
     pub set: Option<String>,
+    pub border_left: Option<String>,
+    pub border_bottom: Option<String>,
+    pub border_render: Option<BorderRender>,
+    pub border_bottom_lift: Option<f32>,
+    pub border_bottom_shift: Option<f32>,
+    pub no_border: bool,
+    pub no_art: bool,
+    pub list_borders: bool,
     pub play: bool,
     pub pin: bool,
     pub unpin: bool,
@@ -77,6 +85,29 @@ impl Args {
                 "--no-color" => args.no_color = true,
                 "--palette" => args.palette = true,
                 "--live" => args.live = true,
+                "--no-border" => args.no_border = true,
+                "--no-art" => args.no_art = true,
+                "--list-borders" => args.list_borders = true,
+                "--border-left" => {
+                    args.border_left = Some(value(argv, "--border-left", "a name or a path")?);
+                }
+                "--border-bottom" => {
+                    args.border_bottom = Some(value(argv, "--border-bottom", "a name or a path")?);
+                }
+                "--border-bottom-lift" => {
+                    args.border_bottom_lift =
+                        Some(number(argv, "--border-bottom-lift", "a number of rows")?);
+                }
+                "--border-bottom-shift" => {
+                    args.border_bottom_shift = Some(number(
+                        argv,
+                        "--border-bottom-shift",
+                        "a number of columns",
+                    )?);
+                }
+                "--border-render" => {
+                    args.border_render = Some(choice(argv, "--border-render", "border mode")?);
+                }
                 "--set" => args.set = Some(value(argv, "--set", "an animation name")?),
                 "-a" | "--animation" => {
                     args.animation = Some(value(argv, "--animation", "a name")?);
@@ -138,6 +169,29 @@ impl Args {
         if self.live {
             cfg.live = true;
         }
+        if let Some(v) = &self.border_left {
+            cfg.border_left = v.clone();
+        }
+        if let Some(v) = &self.border_bottom {
+            cfg.border_bottom = v.clone();
+        }
+        if let Some(v) = self.border_render {
+            cfg.border_render = v;
+        }
+        if let Some(v) = self.border_bottom_lift {
+            cfg.border_bottom_lift = v;
+        }
+        if let Some(v) = self.border_bottom_shift {
+            cfg.border_bottom_shift = v;
+        }
+        if self.no_art {
+            cfg.art = false;
+        }
+        // Last, so it wins over a border named earlier on the same line.
+        if self.no_border {
+            cfg.border_left.clear();
+            cfg.border_bottom.clear();
+        }
     }
 
     /// What `--save` writes: each setting this run carried, as the config key
@@ -155,6 +209,24 @@ impl Args {
         }
         if let Some(v) = self.info_style {
             out.push(("info_style", format!("{:?}", v.word())));
+        }
+        if self.no_art {
+            out.push(("art", "false".to_string()));
+        }
+        if let Some(v) = &self.border_left {
+            out.push(("border_left", format!("{v:?}")));
+        }
+        if let Some(v) = &self.border_bottom {
+            out.push(("border_bottom", format!("{v:?}")));
+        }
+        if let Some(v) = self.border_render {
+            out.push(("border_render", format!("{:?}", v.word())));
+        }
+        if let Some(v) = self.border_bottom_lift {
+            out.push(("border_bottom_lift", v.to_string()));
+        }
+        if let Some(v) = self.border_bottom_shift {
+            out.push(("border_bottom_shift", v.to_string()));
         }
         if let Some(v) = self.fps {
             out.push(("fps", v.to_string()));
@@ -196,8 +268,9 @@ Options:
                           (icons in a box), tree (user box over OS and PC
                           groups), sections (titled Hardware / Software /
                           Uptime blocks), chips (filled pills), iconic (a
-                          coloured icon per row, no labels) or card (one box,
-                          labels left, values right)
+                          coloured icon per row, no labels), card (one box,
+                          labels left, values right) or minimal (an icon and a
+                          value per row, nothing else)
       --save              Keep the settings given this run, for every run after
   -W, --width <COLS>      Cap the art width (0 fills the screen)
   -H, --height <ROWS>     Cap the art height (0 fills the screen)
@@ -206,6 +279,22 @@ Options:
                           (matugen, pywal, wallust) instead of the config
       --live              Keep uptime, memory, swap and disk current while
                           pinned or interactive (interval: live_interval)
+      --border-left <B>   An ornament down the left edge: the name of a built-in
+                          or your own image (see --list-borders), or a PNG path
+      --border-bottom <B> An ornament along the bottom; the image is upright and
+                          is turned a quarter clockwise
+      --border-render <M> auto (pictures where the terminal can show them,
+                          else no border), image (force pictures), or cells
+                          (redraw as braille text, which works anywhere)
+      --border-bottom-lift <N>
+                          Raise the bottom ornament by N rows (may be a
+                          fraction, default 2.15), closer to the info
+      --border-bottom-shift <N>
+                          Move the bottom ornament N columns to the right
+                          (may be a fraction, default 12)
+      --no-border         Draw no border this run, whatever the config says
+      --no-art            Draw no animation: the info is the whole pane
+      --list-borders      List the available border images
       --no-color          Disable colour output
   -h, --help              Show this help
   -V, --version           Show the version
@@ -333,6 +422,76 @@ mod tests {
     }
 
     #[test]
+    fn borders_are_named_laid_over_the_config_and_saved() {
+        let a = run(&[
+            "--border-left",
+            "03",
+            "--border-bottom",
+            "~/x.png",
+            "--border-render",
+            "cells",
+        ]);
+        let mut cfg = Config::default();
+        a.apply(&mut cfg);
+
+        assert_eq!(cfg.border_left, "03");
+        assert_eq!(cfg.border_bottom, "~/x.png");
+        assert_eq!(cfg.border_render, BorderRender::Cells);
+        assert_eq!(
+            a.saved(),
+            vec![
+                ("border_left", "\"03\"".to_string()),
+                ("border_bottom", "\"~/x.png\"".to_string()),
+                ("border_render", "\"cells\"".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn no_border_wins_over_a_border_named_on_the_same_line_or_in_the_config() {
+        let mut cfg = Config {
+            border_left: "01".into(),
+            border_bottom: "02".into(),
+            ..Config::default()
+        };
+        run(&["--no-border", "--border-left", "03"]).apply(&mut cfg);
+
+        assert!(cfg.border_left.is_empty() && cfg.border_bottom.is_empty());
+        // It is for this run only, so it is not something `--save` writes.
+        assert!(run(&["--no-border"]).saved().is_empty());
+    }
+
+    #[test]
+    fn no_art_turns_the_animation_off_and_can_be_saved() {
+        let mut cfg = Config::default();
+        run(&["--no-art"]).apply(&mut cfg);
+        assert!(!cfg.art);
+
+        assert_eq!(
+            run(&["--no-art"]).saved(),
+            vec![("art", "false".to_string())]
+        );
+        assert!(Config::default().art, "and it is on by default");
+    }
+
+    #[test]
+    fn a_border_flag_needs_its_argument_and_a_known_mode() {
+        assert_eq!(
+            err(&["--border-left"]),
+            "--border-left needs a name or a path"
+        );
+        assert_eq!(
+            err(&["--border-bottom"]),
+            "--border-bottom needs a name or a path"
+        );
+        assert_eq!(
+            err(&["--border-render", "sixel"]),
+            format!("unknown border mode: sixel ({})", BorderRender::list())
+        );
+        assert!(run(&["--list-borders"]).list_borders);
+    }
+
+    #[test]
     fn saving_nothing_is_an_empty_list() {
         assert!(run(&["--save", "--pin", "--live"]).saved().is_empty());
     }
@@ -384,6 +543,14 @@ mod tests {
             "--style",
             "--art-color",
             "--info",
+            "--border-left",
+            "--border-bottom",
+            "--border-render",
+            "--border-bottom-lift",
+            "--border-bottom-shift",
+            "--no-border",
+            "--no-art",
+            "--list-borders",
         ] {
             assert!(HELP.contains(flag), "{flag} is parsed but not documented");
         }

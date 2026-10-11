@@ -173,6 +173,74 @@ Never use bare `animfetch` here, since it waits for input.
 No aliases, no history, no completion: a launcher with a prompt, not a shell.
 
 
+## Borders
+
+An ornament can run down the left of the data (between the art and the info)
+and another along its bottom, drawn from PNG line art:
+
+```sh
+animfetch --pin --border-left 00 --border-bottom 03
+animfetch --list-borders          # what is built in, and your own
+animfetch --pin --no-border       # for this run only
+```
+```toml
+border_left   = "00"      # a built-in name, one of your own, or a path to a PNG
+border_bottom = "03"
+border_render = "auto"    # auto | image | cells
+border_bottom_lift = 2.15 # raise the bottom ornament toward the info, in rows
+border_bottom_shift = 12.0 # move the bottom ornament to the right, in columns
+```
+
+The images are drawn as the pictures they are, using the kitty graphics
+protocol, which kitty, WezTerm and Ghostty speak: over the cells and under the
+text, scaled to a whole number of cells so nothing is stretched. Terminals that
+do not speak it (VS Code's included) get **no border**; nothing is converted to
+text unless you ask. `animfetch --list-borders` begins by saying which kind of
+terminal you are in.
+
+`border_render = "cells"` is that request: it redraws the image as braille
+characters, which is coarse and works anywhere with colour. `"image"` forces
+pictures even where they are not detected.
+
+A bottom image is stored upright, hilt at the top, and is turned a quarter
+clockwise so it lies along the bottom. The art and the info give up the room a
+border takes, and it is left out on a terminal under 60 columns and when the
+output is not a terminal. `--no-color` and `NO_COLOR` do not remove the
+pictures, which have no colour to turn off; they do remove the `"cells"`
+drawing, which is coloured text.
+
+Put your own PNGs in `~/.config/animfetch/border/left_border/` and
+`.../bottom_border/`; a file of yours shadows a built-in of the same name. They
+should be mostly transparent line art in light strokes, drawn for a dark
+terminal, as the built-in ones are. The built-in images add about 950 KiB to the
+binary; `cargo build --no-default-features` leaves them out, and borders still
+work from your own files.
+
+The protocol is not passed through by tmux or screen, so inside them there is
+no border either. To check a terminal, `kitten icat assets/border/00.png` in
+kitty should show the image, and `animfetch --list-borders` should say it shows
+pictures.
+
+### The look with a border
+
+`minimal` is made to sit beside a border ornament. For the whole look, turn the
+animation off so the ornament and the list are the pane:
+
+```sh
+animfetch --pin --info minimal --no-art --border-left 00 --border-bottom 00
+```
+```toml
+info_style    = "minimal"
+art           = false
+border_left   = "00"
+border_bottom = "00"
+```
+
+Its values are the fuller ones (`zsh 5.9.2`, `kitty 0.48.2`, `mango (Wayland)`),
+which cost the same few milliseconds as `boxed`. A terminal's version comes from
+its environment where it sets one, and from `--version` for kitty, alacritty and
+foot, which are the ones known to answer.
+
 ## Configuration
 
 Optional. Copy [`config.example.toml`][example] to
@@ -183,7 +251,7 @@ falls back to defaults.
 
 ### Info styles
 
-Seven layouts for the info pane, picked with `info_style` or `--info`:
+Eight layouts for the info pane, picked with `info_style` or `--info`:
 
 | Style | Looks like |
 | --- | --- |
@@ -194,6 +262,7 @@ Seven layouts for the info pane, picked with `info_style` or `--info`:
 | `chips` | SYSTEM, SOFTWARE and HARDWARE as filled, rounded pills with two-letter keys |
 | `iconic` | a bare coloured icon per row, no labels, under pill headings, then outline shapes |
 | `card` | one rounded box, labels at the left edge and values at the right, then your own line of text |
+| `minimal` | an icon and a value per row, nothing else: the plain list that sits beside a border |
 
 `boxed` also shows fuller values (kernel name, terminal, shell and window
 manager versions, the filesystem under `disk`), colours usage percentages by how

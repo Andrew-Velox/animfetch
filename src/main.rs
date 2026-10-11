@@ -11,6 +11,7 @@
 //! - [`modes`], [`pin`], [`prompt`], [`term`]: running it
 
 mod anim;
+mod border;
 mod cli;
 mod color;
 mod config;
@@ -86,9 +87,10 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
     // Before anything is drawn, so every mode gets the same colours.
     palette::apply(&mut cfg);
 
-    let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
+    let to_terminal = io::stdout().is_terminal();
+    let interactive = io::stdin().is_terminal() && to_terminal;
     // Meaningless when piped, and NO_COLOR is how you opt out.
-    if !io::stdout().is_terminal() || std::env::var_os("NO_COLOR").is_some() {
+    if !to_terminal || std::env::var_os("NO_COLOR").is_some() {
         cfg.color = false;
     }
 
@@ -116,6 +118,11 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
 
     let anim_dir = dir.as_ref().map(|d| d.join("anim"));
 
+    if args.list_borders {
+        list_borders(dir.as_deref(), &cfg);
+        return Ok(ExitCode::SUCCESS);
+    }
+
     if args.list {
         list_animations(anim_dir.as_deref(), &cfg.animation);
         return Ok(ExitCode::SUCCESS);
@@ -136,6 +143,11 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
 
     let animation = Animation::load(anim_dir.as_deref(), &cfg.animation)?;
 
+    // A border that cannot be read is an error now, like an unknown animation,
+    // rather than a pane that quietly has no ornament.
+    let borders = border::Borders::load(&cfg, dir.as_deref(), interactive, to_terminal)
+        .map_err(io::Error::other)?;
+
     let title = fetch::title();
     let items = fetch::gather(&cfg);
     let fetch = Fetch {
@@ -143,6 +155,7 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
         cfg: &cfg,
         title: &title,
         items: &items,
+        borders: borders.as_ref(),
     };
 
     if !interactive || args.once {
@@ -166,6 +179,38 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
 
     let status = modes::shell_loop(&fetch)?;
     Ok(ExitCode::from(status))
+}
+
+/// Print every available border image, marking the ones in effect.
+fn list_borders(config: Option<&Path>, cfg: &Config) {
+    println!("{}\n", border::report());
+    for (slot, current) in [
+        (border::Slot::Left, &cfg.border_left),
+        (border::Slot::Bottom, &cfg.border_bottom),
+    ] {
+        println!("{} borders:", slot.folder().trim_end_matches("_border"));
+
+        let entries = border::list(slot, config);
+        let width = entries.iter().map(|e| e.name.len()).max().unwrap_or(0);
+        for entry in &entries {
+            let mark = if entry.name == *current { "*" } else { " " };
+            let source = match &entry.source {
+                border::Source::Bundled => "built in".to_string(),
+                border::Source::File(path) => path.display().to_string(),
+            };
+            println!("{mark} {:width$}  {source}", entry.name);
+        }
+        if entries.is_empty() {
+            println!("  none");
+        }
+    }
+
+    if let Some(dir) = config {
+        println!(
+            "\nyour own go in {}/border/left_border and .../bottom_border",
+            dir.display()
+        );
+    }
 }
 
 /// Print every available animation, marking the one currently in effect.

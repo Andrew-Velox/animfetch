@@ -45,6 +45,28 @@ pub enum ArtColor {
     Theme,
 }
 
+/// How a border image reaches the screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BorderRender {
+    /// The pictures where the terminal can show them, and no border where it
+    /// cannot. Never text, unless that was asked for.
+    #[default]
+    Auto,
+    /// Pictures, using the kitty graphics protocol.
+    Image,
+    /// Braille cells, which work in any terminal with colour.
+    Cells,
+}
+
+impl Choice for BorderRender {
+    const WORDS: &'static [(&'static str, Self)] = &[
+        ("auto", BorderRender::Auto),
+        ("image", BorderRender::Image),
+        ("cells", BorderRender::Cells),
+    ];
+}
+
 /// A setting written as one of a few words. The same table is what a config
 /// file may hold, what a flag accepts, what `--save` writes back, and the list
 /// of choices an error message offers, so none of them can disagree.
@@ -100,6 +122,7 @@ impl Choice for InfoStyle {
         ("chips", InfoStyle::Chips),
         ("iconic", InfoStyle::Iconic),
         ("card", InfoStyle::Card),
+        ("minimal", InfoStyle::Minimal),
     ];
 }
 
@@ -172,6 +195,9 @@ pub enum InfoStyle {
     /// A single rounded box: each row's label at the left edge and its value
     /// at the right, then a line of your own text below.
     Card,
+    /// An icon and a value per row, in one colour, with no title, labels or
+    /// frame: the plain list that sits beside a border ornament.
+    Minimal,
 }
 
 /// A row of your own text, for `custom`.
@@ -289,6 +315,18 @@ const CARD_MODULES: &[Module] = &[
     Module::Custom,
 ];
 
+const MINIMAL_MODULES: &[Module] = &[
+    Module::Os,
+    Module::Kernel,
+    Module::Wm,
+    Module::Shell,
+    Module::Terminal,
+    Module::Cpu,
+    Module::Gpu,
+    Module::Memory,
+    Module::OsAge,
+];
+
 impl InfoStyle {
     /// The rows this style shows when `modules` is not set.
     pub fn default_modules(self) -> &'static [Module] {
@@ -300,6 +338,7 @@ impl InfoStyle {
             InfoStyle::Chips => CHIPS_MODULES,
             InfoStyle::Iconic => ICONIC_MODULES,
             InfoStyle::Card => CARD_MODULES,
+            InfoStyle::Minimal => MINIMAL_MODULES,
         }
     }
 
@@ -370,6 +409,8 @@ pub struct Config {
     pub height: usize,
     /// Seconds the startup form (`--play`) animates before handing back.
     pub play_seconds: f32,
+    /// Draw the animation. Off, the info (and any border) is the whole pane.
+    pub art: bool,
     /// How the info pane is laid out.
     pub info_style: InfoStyle,
     /// Draw an icon beside each label in styles that have them. They are Nerd
@@ -390,6 +431,20 @@ pub struct Config {
     pub custom: Vec<CustomRow>,
     /// A line of your own text, in the styles that have room for one.
     pub footer: String,
+    /// An ornament down the left edge of the fetch: the name of a bundled or
+    /// your own image, or a path to a PNG. Empty is none.
+    pub border_left: String,
+    /// An ornament along the bottom. The image is upright and is turned a
+    /// quarter clockwise.
+    pub border_bottom: String,
+    /// How borders are drawn.
+    pub border_render: BorderRender,
+    /// Rows to raise the bottom picture by, closer to the info. May be a
+    /// fraction. Only pictures can be raised by part of a row.
+    pub border_bottom_lift: f32,
+    /// Columns to move the bottom picture to the right by, away from the left
+    /// border's edge. May be a fraction; only pictures move by part of one.
+    pub border_bottom_shift: f32,
 }
 
 impl Default for Config {
@@ -429,6 +484,7 @@ impl Default for Config {
             width: 56,
             height: 20,
             play_seconds: 3.0,
+            art: true,
             info_style: InfoStyle::Classic,
             icons: true,
             live: false,
@@ -437,6 +493,11 @@ impl Default for Config {
             modules: None,
             custom: Vec::new(),
             footer: String::new(),
+            border_left: String::new(),
+            border_bottom: String::new(),
+            border_render: BorderRender::Auto,
+            border_bottom_lift: 2.15,
+            border_bottom_shift: 12.0,
         }
     }
 }
@@ -673,6 +734,7 @@ mod tests {
         agrees::<Style>();
         agrees::<ArtColor>();
         agrees::<InfoStyle>();
+        agrees::<BorderRender>();
     }
 
     #[test]
@@ -827,6 +889,38 @@ mod tests {
         let own: Config =
             toml::from_str("info_style = \"boxed\"\nmodules = [\"os\", \"os_age\"]").unwrap();
         assert_eq!(own.modules(), [Module::Os, Module::OsAge]);
+    }
+
+    #[test]
+    fn the_bottom_border_is_raised_and_moved_in_unless_told_otherwise() {
+        assert_eq!(Config::default().border_bottom_lift, 2.15);
+        assert_eq!(Config::default().border_bottom_shift, 12.0);
+        let cfg: Config = toml::from_str("border_bottom_shift = 3.5").unwrap();
+        assert_eq!(cfg.border_bottom_shift, 3.5);
+        let cfg: Config = toml::from_str("border_bottom_lift = 1.25").unwrap();
+        assert_eq!(cfg.border_bottom_lift, 1.25);
+    }
+
+    #[test]
+    fn the_art_is_on_unless_it_is_turned_off() {
+        assert!(Config::default().art);
+        assert!(!toml::from_str::<Config>("art = false").unwrap().art);
+    }
+
+    #[test]
+    fn borders_default_to_none_and_are_read_from_the_config() {
+        let none = Config::default();
+        assert!(none.border_left.is_empty() && none.border_bottom.is_empty());
+        assert_eq!(none.border_render, BorderRender::Auto);
+
+        let cfg: Config = toml::from_str(
+            "border_left = \"03\"\nborder_bottom = \"~/x.png\"\nborder_render = \"cells\"",
+        )
+        .unwrap();
+        assert_eq!(cfg.border_left, "03");
+        assert_eq!(cfg.border_bottom, "~/x.png");
+        assert_eq!(cfg.border_render, BorderRender::Cells);
+        assert!(toml::from_str::<Config>("border_render = \"sixel\"").is_err());
     }
 
     #[test]
