@@ -172,9 +172,9 @@ impl<'a> Layout<'a> {
     }
 
     /// The border pictures for a pane painted by a [`Pane`](crate::render::Pane),
-    /// which has rows to address: send them, and have the pane place them
-    /// again with each full repaint. Takes the previous layout's pictures away
-    /// first, since a resize changes their size.
+    /// which has rows to address: hand them to the pane, which sends and places
+    /// them with each full repaint and again every so often. Takes the
+    /// previous layout's pictures away first, since a resize changes their size.
     pub fn show_borders(
         &self,
         out: &mut impl Write,
@@ -185,9 +185,11 @@ impl<'a> Layout<'a> {
             border::clear(&mut escapes);
         }
 
+        // The pictures go out with the pane's next paint, and again after
+        // that, so that a screen cleared under them does not lose them.
         let mut overlay = String::new();
         if let Some(frame) = self.frame.as_ref().filter(|f| f.has_images()) {
-            frame.transmit(&mut escapes);
+            frame.transmit(&mut overlay);
             frame.place_at(1, &mut overlay);
         }
         pane.set_overlay(overlay);
