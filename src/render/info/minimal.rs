@@ -41,7 +41,13 @@ pub fn rows(items: &[Item], cfg: &Config) -> Vec<Row> {
 
     // A row of your own has no entry in the table: it is named for itself.
     let short = |item: &Item| {
-        icons::lookup(item.label).map_or_else(|| item.label.to_lowercase(), |g| g.short.to_string())
+        item.renamed_to().map_or_else(
+            || {
+                icons::lookup(item.label)
+                    .map_or_else(|| item.label.to_lowercase(), |g| g.short.to_string())
+            },
+            str::to_string,
+        )
     };
     let short_w = shown.iter().map(|i| short(i).width()).max().unwrap_or(0);
 
@@ -53,7 +59,7 @@ pub fn rows(items: &[Item], cfg: &Config) -> Vec<Row> {
             } else {
                 format!("{:<short_w$}", short(item))
             },
-            label: item.label,
+            label: item.name(),
             text: text_of(item),
         })
         .collect()

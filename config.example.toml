@@ -323,14 +323,44 @@ color = true
 #
 # border_bottom_shift = 12.0
 
-# Rows of your own text. They are placed wherever `custom` stands in `modules`,
-# so `modules = ["os", "custom", "kernel"]` puts them between the two. Only the
-# styles that list rows freely show them: classic, boxed and card. A row with
-# an empty label is skipped.
+# Rows of your own, from text or from a command. They are placed wherever
+# `custom` stands in `modules`, so `modules = ["os", "custom", "kernel"]` puts
+# them between the two. Only the styles that list rows freely show them:
+# classic, boxed and card. A row with an empty label is skipped. Give each
+# either a `value` or a `command`, not both.
 #
 # custom = [
 #   { label = "Owner", value = "POKKITA" },
+#   { label = "Public IP", command = "curl -s --max-time 1 ifconfig.me" },
 # ]
+
+# Change a built-in row. Keyed by the module names `modules` takes; each of
+# `label`, `value` and `command` is optional, but one has to be there, and
+# `value` and `command` are alternatives.
+#
+#   label    the name shown for the row. Only the name: the row keeps its icon
+#            and its place.
+#   value    text shown instead of what the machine reports. Replaces any
+#            figures or bars a style would draw for the row, and the row is
+#            no longer refreshed by `live`.
+#   command  a shell command; the first non-empty line it prints is the value.
+#            It runs with your privileges, once, at startup. Nothing printed,
+#            or longer than `command_timeout`, leaves the row out.
+#
+# [overrides.os]
+# label = "Distro"
+#
+# [overrides.kernel]
+# value = "my-own-kernel 1.0"
+#
+# [overrides.uptime]
+# label = "Up"
+# command = "uptime -p"
+
+# Seconds a `command` may take before its row is left out. Commands start
+# together, so this bounds all of them at once. Clamped to 0.1-10.
+#
+# command_timeout = 1.0
 
 # A line of your own text, shown under the rows by the styles that have room
 # for one (currently `card`). Wide characters are measured by what they occupy.

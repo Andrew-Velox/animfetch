@@ -41,6 +41,8 @@ pub fn rows<'a>(items: &'a [Item], cfg: &Config) -> Vec<Row<'a>> {
                 Some(g) => (g.icon, g.name.to_string()),
                 None => (icons::GENERIC.icon, i.label.to_lowercase()),
             };
+            // Their own word, as they wrote it, over the short lowercase one.
+            let name = i.renamed_to().map_or(name, str::to_string);
             (icon, name, i)
         })
         .collect();
@@ -59,7 +61,7 @@ pub fn rows<'a>(items: &'a [Item], cfg: &Config) -> Vec<Row<'a>> {
                 mark: cfg.icons.then_some(icon),
                 name,
                 name_w,
-                label: item.label,
+                label: item.name(),
                 plain: &item.value,
                 segs: segs(item),
             });

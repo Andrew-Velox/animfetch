@@ -27,7 +27,7 @@ pub fn rows<'a>(title: &'a str, items: &'a [Item], cfg: &Config) -> Vec<Row<'a>>
     for item in items {
         if !is_swatch(item) {
             rows.push(Row::Pair {
-                label: item.label,
+                label: item.name(),
                 value: &item.value,
             });
         } else if cfg.color {

@@ -1,11 +1,13 @@
 //! User configuration. A missing or malformed file is never fatal: fall back to
 //! defaults and report the problem afterwards.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
 use crate::color::{Color, Gradient, Rgb};
+use crate::rows::{CustomRow, Override};
 
 /// How the art is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -127,7 +129,7 @@ impl Choice for InfoStyle {
 }
 
 /// Which rows appear in the info pane, in order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Module {
     Os,
@@ -198,14 +200,6 @@ pub enum InfoStyle {
     /// An icon and a value per row, in one colour, with no title, labels or
     /// frame: the plain list that sits beside a border ornament.
     Minimal,
-}
-
-/// A row of your own text, for `custom`.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CustomRow {
-    pub label: String,
-    pub value: String,
 }
 
 const CLASSIC_MODULES: &[Module] = &[
@@ -354,6 +348,35 @@ impl InfoStyle {
 }
 
 impl Module {
+    /// The name the row goes by, which is what the styles look its icon and
+    /// place up by. `None` for the two modules that are not a named row: the
+    /// colour swatches, and the marker where your own rows go.
+    pub fn label(self) -> Option<&'static str> {
+        Some(match self {
+            Module::Os => "OS",
+            Module::Host => "Host",
+            Module::Kernel => "Kernel",
+            Module::Uptime => "Uptime",
+            Module::Packages => "Packages",
+            Module::Shell => "Shell",
+            Module::Wm => "WM",
+            Module::Terminal => "Terminal",
+            Module::Cpu => "CPU",
+            Module::Gpu => "GPU",
+            Module::Memory => "Memory",
+            Module::Swap => "Swap",
+            // Every filesystem is a `Disk` row, as the one root disk is.
+            Module::Disk | Module::Disks => "Disk",
+            Module::Display => "Display",
+            Module::Font => "Font",
+            Module::Battery => "Battery",
+            Module::Temperature => "Temperature",
+            Module::ShellPath => "Shell Path",
+            Module::OsAge => "OS Age",
+            Module::Custom | Module::Colors => return None,
+        })
+    }
+
     /// Whether the row's value changes while the fetch is on screen. These are
     /// the only rows `live` re-reads; the rest (OS, kernel, CPU model...) are
     /// facts about the machine, and re-reading them would be wasted work.
@@ -426,9 +449,16 @@ pub struct Config {
     /// Rows to show, in order. Unset means the preset for `info_style`; set,
     /// it wins whatever the style is.
     pub modules: Option<Vec<Module>>,
-    /// Rows of your own text. They appear where `custom` is in `modules`, and
-    /// only in the styles that list rows freely.
+    /// Rows of your own text or command. They appear where `custom` is in
+    /// `modules`, and only in the styles that list rows freely.
     pub custom: Vec<CustomRow>,
+    /// Changes to built-in rows: a name of your own, and text or a command in
+    /// place of the system's reading. Keyed by module name.
+    #[serde(deserialize_with = "overrides_for_modules_with_a_label")]
+    pub overrides: BTreeMap<Module, Override>,
+    /// Seconds a `command` may take before its row is dropped. Clamped to
+    /// 0.1-10. Commands start together, so this bounds all of them at once.
+    pub command_timeout: f32,
     /// A line of your own text, in the styles that have room for one.
     pub footer: String,
     /// An ornament down the left edge of the fetch: the name of a bundled or
@@ -492,6 +522,8 @@ impl Default for Config {
             color: true,
             modules: None,
             custom: Vec::new(),
+            overrides: BTreeMap::new(),
+            command_timeout: 1.0,
             footer: String::new(),
             border_left: String::new(),
             border_bottom: String::new(),
@@ -500,6 +532,27 @@ impl Default for Config {
             border_bottom_shift: 12.0,
         }
     }
+}
+
+/// `overrides`, refusing the modules that are not a named row: there is no
+/// row there to rename, and say so rather than accept a table that does nothing.
+fn overrides_for_modules_with_a_label<'de, D>(de: D) -> Result<BTreeMap<Module, Override>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    let map = BTreeMap::<Module, Override>::deserialize(de)?;
+    for module in map.keys() {
+        if module.label().is_none() {
+            let name = format!("{module:?}").to_lowercase();
+            return Err(D::Error::custom(format!(
+                "`overrides.{name}`: {name} is not a row with a name to change \
+                 (your own rows are set under `custom`)"
+            )));
+        }
+    }
+    Ok(map)
 }
 
 impl Config {
@@ -514,6 +567,20 @@ impl Config {
         self.modules
             .as_deref()
             .unwrap_or_else(|| self.info_style.default_modules())
+    }
+
+    /// Whether the user has put their own text or command in place of this
+    /// module's reading, which is then not the system's to refresh.
+    pub fn is_replaced(&self, module: Module) -> bool {
+        self.overrides
+            .get(&module)
+            .is_some_and(|o| o.source.is_some())
+    }
+
+    /// How long a `command` row may take, clamped so a typo can neither skip
+    /// every command nor hold the fetch for a minute.
+    pub fn command_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs_f32(self.command_timeout.clamp(0.1, 10.0))
     }
 
     /// How often live rows are re-read, clamped so a typo can neither spin the
@@ -593,10 +660,18 @@ pub fn load(dir: Option<&Path>) -> (Config, Option<String>) {
 
     match toml::from_str(&text) {
         Ok(cfg) => (cfg, None),
-        Err(e) => (
-            Config::default(),
-            Some(format!("{}: {}", path.display(), e.message())),
-        ),
+        Err(e) => {
+            // Which line, so a mistake in a long file is found without a hunt.
+            let line = e
+                .span()
+                .map(|span| text[..span.start.min(text.len())].matches('\n').count() + 1)
+                .map(|n| format!(":{n}"))
+                .unwrap_or_default();
+            (
+                Config::default(),
+                Some(format!("{}{line}: {}", path.display(), e.message())),
+            )
+        }
     }
 }
 
@@ -650,6 +725,7 @@ pub fn set_key(dir: &Path, key: &str, value: &str) -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rows::Source;
 
     #[test]
     fn saving_a_key_leaves_the_rest_of_the_config_alone() {
@@ -764,6 +840,10 @@ mod tests {
             "should be defaults"
         );
         assert!(warning.is_some(), "a broken config must not fail silently");
+        assert!(
+            warning.unwrap().contains(":2:"),
+            "it should say which line the mistake is on"
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -935,14 +1015,92 @@ mod tests {
             cfg.custom,
             [CustomRow {
                 label: "Owner".into(),
-                value: "me".into()
+                source: Source::Text("me".into()),
             }]
         );
         assert_eq!(cfg.modules(), [Module::Os, Module::Custom]);
     }
 
     #[test]
-    fn a_custom_row_needs_both_halves_and_rejects_strays() {
+    fn a_custom_row_can_be_a_command() {
+        let cfg: Config = toml::from_str(
+            "[[custom]]\nlabel = \"IP\"\ncommand = \"hostname -I\"\n\n\
+             [[custom]]\nlabel = \"Owner\"\nvalue = \"me\"",
+        )
+        .unwrap();
+
+        assert_eq!(cfg.custom[0].source, Source::Command("hostname -I".into()));
+        assert_eq!(cfg.custom[1].source, Source::Text("me".into()));
+    }
+
+    #[test]
+    fn overrides_are_keyed_by_module_and_default_to_none() {
+        assert!(Config::default().overrides.is_empty());
+
+        let cfg: Config = toml::from_str(
+            "[overrides.os]\nlabel = \"Distro\"\n\n\
+             [overrides.uptime]\ncommand = \"uptime -p\"\n\n\
+             [overrides.shell_path]\nvalue = \"zsh\"",
+        )
+        .unwrap();
+
+        assert_eq!(cfg.overrides.len(), 3);
+        assert_eq!(cfg.overrides[&Module::Os].label.as_deref(), Some("Distro"));
+        assert_eq!(
+            cfg.overrides[&Module::Uptime].source,
+            Some(Source::Command("uptime -p".into()))
+        );
+        assert!(cfg.overrides.contains_key(&Module::ShellPath));
+    }
+
+    #[test]
+    fn overrides_refuse_what_cannot_be_changed_and_say_why() {
+        // Not a module at all.
+        let err = toml::from_str::<Config>("[overrides.nope]\nlabel = \"x\"").unwrap_err();
+        assert!(err.message().contains("nope"), "{}", err.message());
+
+        // A module that is not a named row.
+        for module in ["colors", "custom"] {
+            let err = toml::from_str::<Config>(&format!("[overrides.{module}]\nlabel = \"x\""))
+                .unwrap_err();
+            assert!(err.message().contains(module), "{}", err.message());
+        }
+
+        // And a table that changes nothing is a mistake, not a no-op.
+        assert!(toml::from_str::<Config>("[overrides.os]").is_err());
+    }
+
+    #[test]
+    fn every_module_with_a_row_has_a_name_and_the_two_without_do_not() {
+        let named = [
+            (Module::Os, "OS"),
+            (Module::Wm, "WM"),
+            (Module::Cpu, "CPU"),
+            (Module::OsAge, "OS Age"),
+            (Module::ShellPath, "Shell Path"),
+            (Module::Disks, "Disk"),
+        ];
+        for (module, label) in named {
+            assert_eq!(module.label(), Some(label));
+        }
+        assert_eq!(Module::Colors.label(), None);
+        assert_eq!(Module::Custom.label(), None);
+    }
+
+    #[test]
+    fn a_command_may_take_a_moment_but_not_forever() {
+        let slow: Config = toml::from_str("command_timeout = 9999.0").unwrap();
+        assert_eq!(slow.command_timeout(), std::time::Duration::from_secs(10));
+        let none: Config = toml::from_str("command_timeout = 0.0").unwrap();
+        assert!(none.command_timeout() >= std::time::Duration::from_millis(100));
+        assert_eq!(
+            Config::default().command_timeout(),
+            std::time::Duration::from_secs(1)
+        );
+    }
+
+    #[test]
+    fn a_custom_row_needs_a_source_and_rejects_strays() {
         assert!(toml::from_str::<Config>("custom = [{ label = \"x\" }]").is_err());
         assert!(
             toml::from_str::<Config>("custom = [{ label = \"x\", value = \"y\", oops = 1 }]")

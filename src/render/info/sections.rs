@@ -124,7 +124,7 @@ pub fn rows(items: &[Item], cfg: &Config) -> Vec<Row> {
     let fields: Vec<(&'static str, Vec<Seg>)> = AGE_FIELDS
         .iter()
         .flat_map(|&key| items.iter().filter(move |i| i.label == key))
-        .map(|i| (i.label, segs_of(i)))
+        .map(|i| (i.name(), segs_of(i)))
         .collect();
     // One key column, so the colons line up.
     let key_w = fields.iter().map(|(k, _)| k.width()).max().unwrap_or(0);

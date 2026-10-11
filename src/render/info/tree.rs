@@ -110,7 +110,7 @@ pub fn rows(title: &str, items: &[Item], cfg: &Config) -> Vec<Row> {
                     mark: if cfg.icons { glyph.icon } else { glyph.short },
                     last: n == last,
                 },
-                item.label,
+                item.name(),
                 text_of(item),
             ));
         }

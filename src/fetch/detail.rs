@@ -3,10 +3,10 @@
 //! Not free: a version of the shell or window manager means running it, which
 //! is a few milliseconds the classic style has never paid. See [`run_capture`].
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::common::{env, is_shell};
-use super::{Detail, Item};
+use super::{Detail, Item, command};
 
 /// Give a row its fuller value, where it has one.
 pub(super) fn enrich(item: &mut Item) {
@@ -182,43 +182,13 @@ fn parse_version(text: &str) -> Option<String> {
         .find(|v| !v.is_empty())
 }
 
-/// Run a program and return what it printed, giving up after a moment. This is
-/// the only place animfetch starts one, so the rule that nothing can hold up a
-/// new shell is kept here: no stdin, no stderr, and a short deadline.
+/// Run a program and return what it printed if it succeeded, giving up after
+/// a moment: a version is only worth waiting a few milliseconds for.
 fn run_capture(program: &str, args: &[&str]) -> Option<String> {
-    use std::io::Read as _;
-    use std::process::{Command, Stdio};
-
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-
-    let deadline = Instant::now() + Duration::from_millis(300);
-    loop {
-        match child.try_wait().ok()? {
-            Some(status) if status.success() => break,
-            Some(_) => return None,
-            None if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-            None => std::thread::sleep(Duration::from_millis(2)),
-        }
-    }
-
-    let mut out = String::new();
-    child
-        .stdout
-        .take()?
-        .take(4096)
-        .read_to_string(&mut out)
-        .ok()?;
-    Some(out)
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args);
+    let out = command::capture(cmd, Duration::from_millis(300), 4096)?;
+    out.success.then_some(out.text)
 }
 
 /// `Linux`, `Darwin`: what `uname -s` prints.
@@ -239,6 +209,8 @@ fn sysname() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::*;
 
     fn item(label: &'static str, value: &str) -> Item {
