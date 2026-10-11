@@ -7,7 +7,7 @@
 //! - [`item`]: the row type, and the numbers a row can carry
 //! - [`detail`]: fuller values for the styles that want them
 //! - [`live`]: re-reading the rows that move
-//! - [`format`], [`common`]: what the backends share
+//! - [`mod@format`], [`common`]: what the backends share
 
 mod common;
 mod detail;

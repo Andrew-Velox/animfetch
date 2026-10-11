@@ -587,8 +587,8 @@ mod tests {
     /// An opaque rectangle: a stand-in for an ornament of that shape.
     fn slab(w: usize, h: usize) -> Bitmap {
         let mut b = Bitmap::blank(w, h);
-        for px in b.rgba.chunks_exact_mut(4) {
-            px.copy_from_slice(&[255, 255, 255, 255]);
+        for px in b.rgba.as_chunks_mut::<4>().0 {
+            *px = [255, 255, 255, 255];
         }
         b
     }

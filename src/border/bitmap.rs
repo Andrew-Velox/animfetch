@@ -55,13 +55,13 @@ impl Bitmap {
         match frame.color_type {
             png::ColorType::Rgba => rgba.extend_from_slice(data),
             png::ColorType::Rgb => {
-                for px in data.chunks_exact(3) {
-                    rgba.extend_from_slice(&[px[0], px[1], px[2], 255]);
+                for &[r, g, b] in data.as_chunks::<3>().0 {
+                    rgba.extend_from_slice(&[r, g, b, 255]);
                 }
             }
             png::ColorType::GrayscaleAlpha => {
-                for px in data.chunks_exact(2) {
-                    rgba.extend_from_slice(&[px[0], px[0], px[0], px[1]]);
+                for &[g, a] in data.as_chunks::<2>().0 {
+                    rgba.extend_from_slice(&[g, g, g, a]);
                 }
             }
             png::ColorType::Grayscale => {
@@ -234,8 +234,8 @@ mod tests {
 
     fn solid(w: usize, h: usize, px: [u8; 4]) -> Bitmap {
         let mut b = Bitmap::blank(w, h);
-        for chunk in b.rgba.chunks_exact_mut(4) {
-            chunk.copy_from_slice(&px);
+        for chunk in b.rgba.as_chunks_mut::<4>().0 {
+            *chunk = px;
         }
         b
     }
@@ -459,7 +459,13 @@ mod tests {
         let r = b.resized(7, 11);
 
         assert_eq!((r.w, r.h), (7, 11));
-        assert!(r.rgba.chunks_exact(4).all(|p| p == [10, 20, 30, 255]));
+        assert!(
+            r.rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| *p == [10, 20, 30, 255])
+        );
         let up = b.resized(80, 140);
         assert_eq!((up.w, up.h), (80, 140), "enlarging has something to read");
     }
