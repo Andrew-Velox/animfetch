@@ -293,16 +293,18 @@ gray = false
 # in a terminal that speaks the kitty graphics protocol (kitty, WezTerm,
 # Ghostty). Other terminals, VS Code's included, get no border.
 #
-# Each is the name of a built-in image (`animfetch --list-borders` shows them),
-# of one of your own, or a path to a PNG. Your own go in
-# `~/.config/animfetch/border/left_border/` and `.../bottom_border/`, and shadow
-# a built-in of the same name. Empty means none.
+# Each is the name of a built-in image (`animfetch --list-borders` shows them,
+# numbered 00, 01, 02, ...), of one of your own, or a path to a PNG. Any image
+# can go on either edge. Your own go in `~/.config/animfetch/border/`, and
+# shadow a built-in of the same name; a file in `border/left_border/` or
+# `border/bottom_border/` is for that edge only. Empty means none.
 #
 # The art and the info give up the room a border takes. It is skipped on a
 # terminal under 60 columns, and with no colour (a pipe, NO_COLOR).
 #
-# A bottom image is stored upright, hilt at the top, and is turned a quarter
-# clockwise so it lies along the bottom with the hilt at the right.
+# The left image is drawn as it is. The bottom one is turned a quarter
+# clockwise so it lies along the bottom, so draw it upright, with the end that
+# should be at the right at the top.
 #
 # border_left   = "00"
 # border_bottom = "03"

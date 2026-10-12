@@ -248,6 +248,9 @@ impl Args {
         if let Some(v) = self.art_color {
             out.push(("art_color", format!("{:?}", v.word())));
         }
+        if self.palette {
+            out.push(("color_source", "\"palette\"".to_string()));
+        }
         if let Some(v) = self.info_style {
             out.push(("info_style", format!("{:?}", v.word())));
         }
@@ -263,11 +266,18 @@ impl Args {
         if self.no_art {
             out.push(("art", "false".to_string()));
         }
-        if let Some(v) = &self.border_left {
-            out.push(("border_left", format!("{v:?}")));
-        }
-        if let Some(v) = &self.border_bottom {
-            out.push(("border_bottom", format!("{v:?}")));
+        if self.no_border {
+            // No border is two empty names, which is what the config defaults
+            // to. It wins over a name on the same line, as it does in `apply`.
+            out.push(("border_left", "\"\"".to_string()));
+            out.push(("border_bottom", "\"\"".to_string()));
+        } else {
+            if let Some(v) = &self.border_left {
+                out.push(("border_left", format!("{v:?}")));
+            }
+            if let Some(v) = &self.border_bottom {
+                out.push(("border_bottom", format!("{v:?}")));
+            }
         }
         if let Some(v) = self.border_render {
             out.push(("border_render", format!("{:?}", v.word())));
@@ -286,6 +296,12 @@ impl Args {
         }
         if let Some(v) = self.height {
             out.push(("height", v.to_string()));
+        }
+        if let Some(v) = self.seconds {
+            out.push(("play_seconds", v.to_string()));
+        }
+        if self.live {
+            out.push(("live", "true".to_string()));
         }
         out
     }
@@ -346,7 +362,8 @@ Options:
       --border-bottom-shift <N>
                           Move the bottom ornament N columns to the right
                           (may be a fraction, default 12)
-      --no-border         Draw no border this run, whatever the config says
+      --no-border         Draw no border, whatever the config says; with --save
+                          the config is left with none
       --no-art            Draw no animation: the info is the whole pane
       --list-borders      List the available border images
       --no-color          Draw everything in shades of grey, no colour at all
@@ -605,8 +622,19 @@ mod tests {
         run(&["--no-border", "--border-left", "03"]).apply(&mut cfg);
 
         assert!(cfg.border_left.is_empty() && cfg.border_bottom.is_empty());
-        // It is for this run only, so it is not something `--save` writes.
-        assert!(run(&["--no-border"]).saved().is_empty());
+        // On its own it is for this run. With `--save` it is kept, as two
+        // empty names: what the config holds when there is no border.
+        let none = [
+            ("border_left", "\"\"".to_string()),
+            ("border_bottom", "\"\"".to_string()),
+        ];
+        assert_eq!(run(&["--no-border"]).saved(), none);
+        // And it wins over a name given on the same line, as it does when run.
+        assert_eq!(run(&["--border-left", "03", "--no-border"]).saved(), none);
+
+        let text: String = none.iter().map(|(k, v)| format!("{k} = {v}\n")).collect();
+        let cfg: Config = toml::from_str(&text).unwrap();
+        assert!(cfg.border_left.is_empty() && cfg.border_bottom.is_empty());
     }
 
     #[test]
@@ -677,8 +705,31 @@ mod tests {
     }
 
     #[test]
+    fn every_setting_flag_can_be_saved_and_read_back() {
+        let a = run(&["--live", "--palette", "-s", "1.5"]);
+        let saved = a.saved();
+        assert!(saved.contains(&("live", "true".to_string())), "{saved:?}");
+        assert!(
+            saved.contains(&("color_source", "\"palette\"".to_string())),
+            "{saved:?}"
+        );
+        assert!(
+            saved.contains(&("play_seconds", "1.5".to_string())),
+            "{saved:?}"
+        );
+
+        let text: String = saved.iter().map(|(k, v)| format!("{k} = {v}\n")).collect();
+        let cfg: Config = toml::from_str(&text).unwrap();
+        assert!(cfg.live);
+        assert_eq!(cfg.color_source, ColorSource::Palette);
+        assert_eq!(cfg.play_seconds, 1.5);
+    }
+
+    #[test]
     fn saving_nothing_is_an_empty_list() {
-        assert!(run(&["--save", "--pin", "--live"]).saved().is_empty());
+        // The modes are what to run, not settings to keep.
+        assert!(run(&["--save", "--pin"]).saved().is_empty());
+        assert!(run(&["--save", "--play", "--once"]).saved().is_empty());
     }
 
     #[test]

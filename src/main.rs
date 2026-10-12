@@ -223,32 +223,39 @@ fn dispatch(args: Args, dir: Option<PathBuf>, mut cfg: Config) -> io::Result<Exi
 }
 
 /// Print every available border image, marking the ones in effect.
+///
+/// One list, since any image goes on either edge: `L` marks the one in use on
+/// the left and `B` the one along the bottom.
 fn list_borders(config: Option<&Path>, cfg: &Config) {
     println!("{}\n", border::report());
-    for (slot, current) in [
-        (border::Slot::Left, &cfg.border_left),
-        (border::Slot::Bottom, &cfg.border_bottom),
-    ] {
-        println!("{} borders:", slot.folder().trim_end_matches("_border"));
 
-        let entries = border::list(slot, config);
-        let width = entries.iter().map(|e| e.name.len()).max().unwrap_or(0);
-        for entry in &entries {
-            let mark = if entry.name == *current { "*" } else { " " };
-            let source = match &entry.source {
-                border::Source::Bundled => "built in".to_string(),
-                border::Source::File(path) => path.display().to_string(),
-            };
-            println!("{mark} {:width$}  {source}", entry.name);
+    // The two edges share everything but a folder of your own for one of them.
+    let mut entries = border::list(border::Slot::Left, config);
+    for entry in border::list(border::Slot::Bottom, config) {
+        if !entries.iter().any(|e| e.name == entry.name) {
+            entries.push(entry);
         }
-        if entries.is_empty() {
-            println!("  none");
-        }
+    }
+
+    println!("borders (any can go on either edge; the bottom one is turned a quarter):");
+    let width = entries.iter().map(|e| e.name.len()).max().unwrap_or(0);
+    for entry in &entries {
+        let left = if entry.name == cfg.border_left { 'L' } else { ' ' };
+        let bottom = if entry.name == cfg.border_bottom { 'B' } else { ' ' };
+        let source = match &entry.source {
+            border::Source::Bundled => "built in".to_string(),
+            border::Source::File(path) => path.display().to_string(),
+        };
+        println!("{left}{bottom} {:width$}  {source}", entry.name);
+    }
+    if entries.is_empty() {
+        println!("  none");
     }
 
     if let Some(dir) = config {
         println!(
-            "\nyour own go in {}/border/left_border and .../bottom_border",
+            "\nyour own go in {}/border/, and are for either edge; one in \
+             border/left_border or border/bottom_border is for that edge only",
             dir.display()
         );
     }
