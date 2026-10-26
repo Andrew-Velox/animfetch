@@ -60,6 +60,13 @@ Arch Linux:
 ```sh
 paru -S animfetch-bin      # or animfetch-git to build from source
 ```
+
+Vylen Linux:
+
+```sh
+emerald install animfetch
+```
+
 Nix / NixOS:
 
 Run without installing:
