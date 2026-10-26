@@ -138,6 +138,14 @@ fn packages() -> Option<String> {
         }
     }
 
+    // Vylen Linux: one directory per installed package.
+    if let Ok(entries) = fs::read_dir("/var/lib/emerald/db") {
+        let n = entries.filter_map(Result::ok).count();
+        if n > 0 {
+            return Some(format!("{n} (emerald)"));
+        }
+    }
+
     None
 }
 
